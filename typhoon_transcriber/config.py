@@ -7,7 +7,7 @@ import os
 
 # Application Metadata
 APP_NAME = "Typhoon ASR Transcriber"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 ORGANIZATION_NAME = "SCB 10X / Community"
 
 # Audio Pipeline Constants

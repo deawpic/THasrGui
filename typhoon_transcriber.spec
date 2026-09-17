@@ -39,7 +39,7 @@ except Exception:
 # Data files (PySide6, sentencepiece)
 datas = []
 try:
-    datas += collect_data_files('pyside6')
+    datas += collect_data_files('PySide6')
 except Exception:
     pass
 
@@ -54,10 +54,10 @@ if models_gitkeep.exists():
     datas.append((str(models_gitkeep), "models"))
 
 hidden_imports = [
-    'pyside6',
-    'pyside6.QtCore',
-    'pyside6.QtGui',
-    'pyside6.QtWidgets',
+    'PySide6',
+    'PySide6.QtCore',
+    'PySide6.QtGui',
+    'PySide6.QtWidgets',
     'onnxruntime',
     'sounddevice',
     'soundfile',

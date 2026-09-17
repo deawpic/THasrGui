@@ -4,13 +4,23 @@ Application entry point for Typhoon ASR Desktop Transcriber.
 
 import sys
 import logging
+from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 
-from .config import APP_NAME, DEFAULT_CACHE_DIR
-from .models.onnx_engine import TyphoonONNXEngine
-from .models.model_manager import ModelManager
-from .ui.main_window import MainWindow
+# When executed directly as a script (e.g. PyInstaller or python main.py),
+# ensure package root is in sys.path so typhoon_transcriber is importable.
+if not __package__:
+    pkg_dir = Path(__file__).resolve().parent
+    for candidate in [pkg_dir.parent, pkg_dir]:
+        if (candidate / "typhoon_transcriber").is_dir() and str(candidate) not in sys.path:
+            sys.path.insert(0, str(candidate))
+            break
+
+from typhoon_transcriber.config import APP_NAME, DEFAULT_CACHE_DIR
+from typhoon_transcriber.models.onnx_engine import TyphoonONNXEngine
+from typhoon_transcriber.models.model_manager import ModelManager
+from typhoon_transcriber.ui.main_window import MainWindow
 
 logging.basicConfig(
     level=logging.INFO,
