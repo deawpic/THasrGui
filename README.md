@@ -574,7 +574,6 @@ src/
 ├── uv.lock                            # Deterministic package lockfile
 ├── .python-version                    # Pinned Python 3.11 runtime
 ├── README.md                          # Application documentation
-├── Post-Processing.txt                # AI Post-Processing prompt instructions
 ├── typhoon-transcriber.desktop        # Linux desktop launcher entry
 ├── typhoon_transcriber/               # Core application package
 │   ├── __init__.py
