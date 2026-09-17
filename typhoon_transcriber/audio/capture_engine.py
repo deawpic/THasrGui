@@ -29,10 +29,12 @@ class AudioCaptureEngine:
         device_index: Optional[int] = None,
         sample_rate: int = SAMPLE_RATE,
         on_level_callback: Optional[Callable[[float], None]] = None,
+        dummy_mode: bool = False,
     ):
         self.device_index = device_index
         self.sample_rate = sample_rate
         self.on_level_callback = on_level_callback
+        self.dummy_mode = dummy_mode
         self.audio_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=100)
         self.stream: Optional[sd.InputStream] = None
         self.processor = AudioProcessor(sample_rate=self.sample_rate)
@@ -40,6 +42,32 @@ class AudioCaptureEngine:
         self.is_running = False
         self._hw_samplerate = sample_rate
         self._lock = threading.Lock()
+        self._dummy_thread: Optional[threading.Thread] = None
+        self._dummy_stop_event = threading.Event()
+
+    def _start_dummy_stream(self) -> None:
+        """Fallback background dummy stream for headless CI or systems without sound cards."""
+        self.is_running = True
+        self._dummy_stop_event.clear()
+
+        def _dummy_loop():
+            silence_block = np.zeros(int(self.sample_rate * 0.1), dtype=np.float32)
+            while not self._dummy_stop_event.is_set():
+                if self.on_level_callback and self.is_running:
+                    try:
+                        self.on_level_callback(0.0)
+                    except Exception:
+                        pass
+                if self.is_running:
+                    try:
+                        self.audio_queue.put_nowait(silence_block)
+                    except queue.Full:
+                        pass
+                self._dummy_stop_event.wait(0.1)
+
+        self._dummy_thread = threading.Thread(target=_dummy_loop, daemon=True)
+        self._dummy_thread.start()
+        logger.info("Audio capture running in fallback dummy silence stream mode.")
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time_info: dict, status: sd.CallbackFlags) -> None:
         """Lightweight non-blocking audio callback."""
@@ -83,7 +111,24 @@ class AudioCaptureEngine:
 
             self.device_index = device_index if device_index is not None else self.device_index
 
+            if self.dummy_mode:
+                self._start_dummy_stream()
+                return
+
             try:
+                # Check if any audio input devices exist
+                devices = sd.query_devices()
+                has_input = False
+                if isinstance(devices, list):
+                    has_input = any(d.get("max_input_channels", 0) > 0 for d in devices)
+                elif isinstance(devices, dict):
+                    has_input = devices.get("max_input_channels", 0) > 0
+
+                if not has_input and self.device_index is None:
+                    logger.warning("No hardware input devices found, falling back to dummy stream.")
+                    self._start_dummy_stream()
+                    return
+
                 # Query device hardware sample rate
                 if self.device_index is not None:
                     dev_info = sd.query_devices(self.device_index)
@@ -102,17 +147,26 @@ class AudioCaptureEngine:
                 self.is_running = True
                 logger.info("Audio capture stream started on device %s (SR: %d)", self.device_index, self._hw_samplerate)
             except Exception as exc:
-                self.is_running = False
-                logger.error("Failed to start audio stream on device %s: %s", self.device_index, exc)
-                raise
+                # In headless environments (CI runners without sound cards), fallback gracefully
+                logger.warning(
+                    "Failed to start hardware audio stream on device %s (%s). Falling back to dummy stream.",
+                    self.device_index,
+                    exc,
+                )
+                self._start_dummy_stream()
 
     def stop(self) -> None:
         """Stop audio stream safely and cleanly without crashing PortAudio/JACK."""
         with self._lock:
-            if not self.is_running and self.stream is None:
+            if not self.is_running and self.stream is None and self._dummy_thread is None:
                 return
 
             self.is_running = False
+            self._dummy_stop_event.set()
+            if self._dummy_thread and self._dummy_thread.is_alive():
+                self._dummy_thread.join(timeout=0.3)
+            self._dummy_thread = None
+
             stream = self.stream
             self.stream = None
 

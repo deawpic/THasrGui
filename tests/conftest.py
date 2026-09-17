@@ -19,3 +19,15 @@ def isolate_session_cache(tmp_path, monkeypatch):
     clear_last_session_queue(test_session_file)
     yield test_session_file
     clear_last_session_queue(test_session_file)
+
+
+@pytest.fixture(autouse=True)
+def mock_modal_dialogs(monkeypatch):
+    """Global headless CI guard: prevent any modal QMessageBox dialogs from blocking pytest."""
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: QMessageBox.Ok)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.Ok)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: QMessageBox.Ok)
+    monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.Yes)
+
