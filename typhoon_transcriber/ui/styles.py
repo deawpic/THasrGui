@@ -108,7 +108,6 @@ QTextEdit {{
     border: 1px solid #313244;
     border-radius: 8px;
     padding: 12px;
-    font-size: 16px;
     line-height: 1.5;
     selection-background-color: #585b70;
 }}
@@ -295,7 +294,6 @@ QTextEdit {{
     border: 1px solid #d2d2d7;
     border-radius: 8px;
     padding: 12px;
-    font-size: 16px;
     line-height: 1.5;
     selection-background-color: #b3d7ff;
 }}

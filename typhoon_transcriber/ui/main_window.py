@@ -31,8 +31,9 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QGroupBox,
     QDialog,
+    QMenu,
 )
-from PySide6.QtCore import Qt, Slot, QTimer, QUrl
+from PySide6.QtCore import Qt, Slot, QTimer, QUrl, QPoint
 from PySide6.QtGui import (
     QKeySequence,
     QShortcut,
@@ -44,18 +45,34 @@ from PySide6.QtGui import (
     QDesktopServices,
 )
 
-from ..config import APP_NAME, APP_VERSION, DEFAULT_CACHE_DIR, SUPPORTED_AUDIO_EXTENSIONS
+from ..config import (
+    APP_NAME,
+    APP_VERSION,
+    DEFAULT_CACHE_DIR,
+    SUPPORTED_AUDIO_EXTENSIONS,
+    LAST_SESSION_QUEUE_FILE,
+)
 from ..models.onnx_engine import TyphoonONNXEngine
 from ..models.model_manager import ModelManager
 from ..audio.device_manager import AudioDeviceManager, AudioDevice
 from ..transcriber.streaming_worker import ASRStreamingWorker
-from ..transcriber.batch_queue import BatchItem, scan_files_and_folders, BatchQueueWorker
+from ..transcriber.batch_queue import (
+    BatchItem,
+    scan_files_and_folders,
+    BatchQueueWorker,
+    save_batch_queue,
+    load_batch_queue,
+    save_last_session_queue,
+    load_last_session_queue,
+    clear_last_session_queue,
+)
 from ..transcriber.exporter import TranscriptSegment
 from .styles import DARK_THEME_QSS, LIGHT_THEME_QSS
 from .widgets.vu_meter import VUMeterWidget
 from .widgets.export_dialog import ExportDialog
 from .widgets.download_dialog import ModelDownloadDialog
 from .widgets.batch_dialog import BatchConfigDialog
+from .widgets.post_processing_dialog import PostProcessingDialog
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +88,16 @@ class MainWindow(QMainWindow):
     - Drag-and-Drop file and folder ingestion.
     """
 
-    def __init__(self, engine: Optional[TyphoonONNXEngine] = None, parent=None):
+    def __init__(
+        self,
+        engine: Optional[TyphoonONNXEngine] = None,
+        parent=None,
+        session_file: Optional[Path] = None,
+        restore_session: bool = True,
+    ):
         super().__init__(parent)
+        self.session_file = session_file or LAST_SESSION_QUEUE_FILE
+        self.restore_session = restore_session
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.resize(1020, 720)
         self.setMinimumSize(700, 520)
@@ -113,6 +138,7 @@ class MainWindow(QMainWindow):
         self._update_mock_banner()
         self._update_hardware_status()
         self._apply_theme()
+        self._restore_last_session_queue()
 
         # Status timer to display RAM footprint and active engine provider
         self.ram_timer = QTimer(self)
@@ -172,6 +198,11 @@ class MainWindow(QMainWindow):
         )
         self.lbl_provider_status.setToolTip("Active ONNX Runtime Execution Provider reported by session.get_providers()")
 
+        # AI Post-Processing Advice & Prompt Button
+        self.btn_post_processing = QPushButton("💡 AI Post-Processing", self)
+        self.btn_post_processing.setToolTip("คำแนะนำและ Prompt สำหรับส่งข้อความให้ AI (Gemini/ChatGPT/Claude/Qwen) ขัดเกลาคำผิด")
+        self.btn_post_processing.clicked.connect(self.open_post_processing_dialog)
+
         # Theme Toggle Button
         self.btn_theme = QPushButton("🌓 Theme", self)
         self.btn_theme.clicked.connect(self.toggle_theme)
@@ -180,6 +211,7 @@ class MainWindow(QMainWindow):
         header_bar.addWidget(self.combo_hardware)
         header_bar.addWidget(self.lbl_provider_status)
         header_bar.addStretch()
+        header_bar.addWidget(self.btn_post_processing)
         header_bar.addWidget(self.btn_theme)
         main_layout.addLayout(header_bar)
 
@@ -247,6 +279,22 @@ class MainWindow(QMainWindow):
         )
         self.transcript_edit.setReadOnly(False)
         self.transcript_edit.setAcceptDrops(False)
+        self._apply_transcript_font()
+
+        # Connect Ctrl+MouseWheel zooming on transcript_edit
+        orig_wheel_event = self.transcript_edit.wheelEvent
+        def _on_transcript_wheel(event):
+            if event.modifiers() & Qt.ControlModifier:
+                delta = event.angleDelta().y()
+                if delta > 0:
+                    self._adjust_font_size(2)
+                elif delta < 0:
+                    self._adjust_font_size(-2)
+                event.accept()
+            else:
+                orig_wheel_event(event)
+        self.transcript_edit.wheelEvent = _on_transcript_wheel
+
         layout.addWidget(self.transcript_edit, stretch=1)
 
         # Live Bottom Action Bar
@@ -257,28 +305,45 @@ class MainWindow(QMainWindow):
         self.cb_autoscroll.setChecked(True)
 
         self.btn_copy = QPushButton("📋 Copy Text", self)
+        self.btn_copy.setToolTip("คัดลอกข้อความทั้งหมดไปยังคลิปบอร์ด (Copy transcript to clipboard)")
         self.btn_copy.clicked.connect(self.copy_transcript_to_clipboard)
 
         self.btn_clear = QPushButton("🗑 Clear", self)
+        self.btn_clear.setToolTip("ล้างข้อความถอดเสียงทั้งหมดบนหน้าจอ (Clear all transcript text)")
         self.btn_clear.clicked.connect(self.clear_transcript)
 
-        self.btn_zoom_in = QPushButton("A+", self)
-        self.btn_zoom_in.setFixedWidth(40)
-        self.btn_zoom_in.clicked.connect(lambda: self._adjust_font_size(2))
+        v_sep = QFrame(self)
+        v_sep.setFrameShape(QFrame.VLine)
+        v_sep.setFrameShadow(QFrame.Sunken)
 
-        self.btn_zoom_out = QPushButton("A-", self)
-        self.btn_zoom_out.setFixedWidth(40)
+        self.lbl_font_title = QLabel("🗚 ขนาดตัวอักษร:", self)
+
+        self.btn_zoom_out = QPushButton("➖ เล็กลง", self)
+        self.btn_zoom_out.setToolTip("ลดขนาดตัวอักษรข้อความ (Zoom Out -2pt) [Ctrl + -]")
         self.btn_zoom_out.clicked.connect(lambda: self._adjust_font_size(-2))
 
+        self.lbl_font_size = QLabel(f"{self.font_size} pt", self)
+        self.lbl_font_size.setFixedWidth(45)
+        self.lbl_font_size.setAlignment(Qt.AlignCenter)
+        self.lbl_font_size.setStyleSheet("font-weight: bold;")
+
+        self.btn_zoom_in = QPushButton("➕ ใหญ่ขึ้น", self)
+        self.btn_zoom_in.setToolTip("ขยายขนาดตัวอักษรข้อความ (Zoom In +2pt) [Ctrl + +]")
+        self.btn_zoom_in.clicked.connect(lambda: self._adjust_font_size(2))
+
         self.btn_export = QPushButton("💾 Export Transcript...", self)
+        self.btn_export.setToolTip("บันทึกส่งออกไฟล์ถอดเสียง (.txt, .srt, .vtt, .json)")
         self.btn_export.setStyleSheet("background-color: #89b4fa; color: #11111b; font-weight: bold;")
         self.btn_export.clicked.connect(self.open_export_dialog)
 
         bottom_bar.addWidget(self.cb_autoscroll)
         bottom_bar.addWidget(self.btn_copy)
         bottom_bar.addWidget(self.btn_clear)
-        bottom_bar.addWidget(self.btn_zoom_in)
+        bottom_bar.addWidget(v_sep)
+        bottom_bar.addWidget(self.lbl_font_title)
         bottom_bar.addWidget(self.btn_zoom_out)
+        bottom_bar.addWidget(self.lbl_font_size)
+        bottom_bar.addWidget(self.btn_zoom_in)
         bottom_bar.addStretch()
         bottom_bar.addWidget(self.btn_export)
         layout.addLayout(bottom_bar)
@@ -309,15 +374,27 @@ class MainWindow(QMainWindow):
         self.btn_add_folder = self.btn_batch_add_folder
 
         self.btn_batch_remove = QPushButton("➖ Remove Selected", self)
+        self.btn_batch_remove.setToolTip("Remove selected rows from queue (Shift / Ctrl for multi-select)")
         self.btn_batch_remove.clicked.connect(self.remove_selected_batch_items)
 
         self.btn_batch_clear = QPushButton("🗑 Clear List", self)
+        self.btn_batch_clear.setToolTip("Clear all items from batch queue")
         self.btn_batch_clear.clicked.connect(self.clear_batch_items)
+
+        self.btn_batch_save_queue = QPushButton("💾 Save Queue...", self)
+        self.btn_batch_save_queue.setToolTip("Save current queue & progress to a JSON file to resume later")
+        self.btn_batch_save_queue.clicked.connect(self.save_queue_dialog)
+
+        self.btn_batch_load_queue = QPushButton("📂 Load Queue...", self)
+        self.btn_batch_load_queue.setToolTip("Load a saved queue to continue unfinished files")
+        self.btn_batch_load_queue.clicked.connect(self.load_queue_dialog)
 
         batch_bar.addWidget(self.btn_batch_add_files)
         batch_bar.addWidget(self.btn_batch_add_folder)
         batch_bar.addWidget(self.btn_batch_remove)
         batch_bar.addWidget(self.btn_batch_clear)
+        batch_bar.addWidget(self.btn_batch_save_queue)
+        batch_bar.addWidget(self.btn_batch_load_queue)
         batch_bar.addStretch()
         layout.addLayout(batch_bar)
 
@@ -331,6 +408,7 @@ class MainWindow(QMainWindow):
         dest_lbl = QLabel("Destination:")
         dest_lbl.setStyleSheet("font-weight: bold;")
         self.txt_batch_dest = QLineEdit(str(self.dest_batch_dir), self)
+        self.txt_batch_dest.textChanged.connect(self._on_batch_dest_text_changed)
         self.btn_batch_browse = QPushButton("📂 Browse...", self)
         self.btn_batch_browse.clicked.connect(self._browse_batch_dest_folder)
 
@@ -351,6 +429,11 @@ class MainWindow(QMainWindow):
         self.cb_batch_srt.setChecked(True)
         self.cb_batch_overwrite.setChecked(True)
 
+        self.cb_batch_txt.toggled.connect(lambda: self._auto_save_session_queue())
+        self.cb_batch_srt.toggled.connect(lambda: self._auto_save_session_queue())
+        self.cb_batch_vtt.toggled.connect(lambda: self._auto_save_session_queue())
+        self.cb_batch_json.toggled.connect(lambda: self._auto_save_session_queue())
+
         fmt_row.addWidget(self.cb_batch_txt)
         fmt_row.addWidget(self.cb_batch_srt)
         fmt_row.addWidget(self.cb_batch_vtt)
@@ -361,19 +444,22 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(settings_group)
 
-        # Batch Table Widget (Requirement: tab batch ทำเป็น ตาราง)
-        self.batch_table = QTableWidget(0, 6, self)
+        # Batch Table Widget (5 columns, multi-selection with Shift/Ctrl, right-click edit output)
+        self.batch_table = QTableWidget(0, 5, self)
         self.batch_table.setHorizontalHeaderLabels([
-            "#", "File Name", "Relative Subfolder", "Size (MB)", "Status", "Mirrored Output / Details"
+            "#", "File Name", "Size (MB)", "Status", "Output Destination / Details"
         ])
         self.batch_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.batch_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.batch_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.batch_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.batch_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.batch_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        self.batch_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
+        self.batch_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.batch_table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.batch_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.batch_table.setAlternatingRowColors(True)
+        self.batch_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.batch_table.customContextMenuRequested.connect(self._on_batch_table_context_menu)
+        self.batch_table.cellDoubleClicked.connect(self._on_batch_table_cell_double_clicked)
         layout.addWidget(self.batch_table, stretch=1)
 
         # Batch Progress Indicators
@@ -384,9 +470,7 @@ class MainWindow(QMainWindow):
         self.lbl_batch_overall.setStyleSheet("font-weight: bold; color: #89b4fa;")
         self.prog_batch_overall = QProgressBar(self)
         self.prog_batch_overall.setValue(0)
-
         self.lbl_batch_file = QLabel("Current File: Ready", self)
-        self.lbl_batch_file.setStyleSheet("color: #cdd6f4;")
         self.prog_batch_file = QProgressBar(self)
         self.prog_batch_file.setValue(0)
 
@@ -428,6 +512,17 @@ class MainWindow(QMainWindow):
         self.shortcut_toggle = QShortcut(QKeySequence("F9"), self)
         self.shortcut_toggle.activated.connect(self._toggle_live_transcription)
 
+        self.shortcut_zoom_in = QShortcut(QKeySequence("Ctrl+="), self)
+        self.shortcut_zoom_in.activated.connect(lambda: self._adjust_font_size(2))
+        self.shortcut_zoom_in2 = QShortcut(QKeySequence("Ctrl++"), self)
+        self.shortcut_zoom_in2.activated.connect(lambda: self._adjust_font_size(2))
+
+        self.shortcut_zoom_out = QShortcut(QKeySequence("Ctrl+-"), self)
+        self.shortcut_zoom_out.activated.connect(lambda: self._adjust_font_size(-2))
+
+        self.shortcut_zoom_reset = QShortcut(QKeySequence("Ctrl+0"), self)
+        self.shortcut_zoom_reset.activated.connect(lambda: self._set_font_size(16))
+
     def _update_mock_banner(self) -> None:
         """Show or hide mock notification banner based on engine status."""
         if getattr(self.engine, "use_mock", False):
@@ -457,21 +552,44 @@ class MainWindow(QMainWindow):
                     self.device_combo.setCurrentIndex(i)
                     break
 
+    def _apply_transcript_font(self) -> None:
+        """Apply font size to transcript text editor reliably across styles and documents."""
+        font = self.transcript_edit.font()
+        font.setPointSize(self.font_size)
+        self.transcript_edit.setFont(font)
+        self.transcript_edit.document().setDefaultFont(font)
+        self.transcript_edit.setStyleSheet(f"font-size: {self.font_size}pt;")
+        if hasattr(self, "lbl_font_size"):
+            self.lbl_font_size.setText(f"{self.font_size} pt")
+
+    def _set_font_size(self, size: int) -> None:
+        """Directly set transcript display font size."""
+        self.font_size = max(10, min(size, 36))
+        self._apply_transcript_font()
+
+    def _adjust_font_size(self, delta: int) -> None:
+        """Increase or decrease transcript display font size."""
+        self.font_size = max(10, min(self.font_size + delta, 36))
+        self._apply_transcript_font()
+
     def _apply_theme(self) -> None:
         """Apply Dark or Light QSS stylesheet."""
-        self.setStyleSheet(DARK_THEME_QSS if self.is_dark_theme else LIGHT_THEME_QSS)
+        qss = DARK_THEME_QSS if self.is_dark_theme else LIGHT_THEME_QSS
+        self.setStyleSheet(qss)
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet(qss)
+        if hasattr(self, "lbl_batch_overall"):
+            self.lbl_batch_overall.setStyleSheet(
+                f"font-weight: bold; color: {'#89b4fa' if self.is_dark_theme else '#0071e3'};"
+            )
+        if hasattr(self, "transcript_edit"):
+            self._apply_transcript_font()
 
     def toggle_theme(self) -> None:
         """Switch between dark and light themes."""
         self.is_dark_theme = not self.is_dark_theme
         self._apply_theme()
-
-    def _adjust_font_size(self, delta: int) -> None:
-        """Increase or decrease transcript display font size."""
-        self.font_size = max(10, min(self.font_size + delta, 36))
-        font = self.transcript_edit.font()
-        font.setPointSize(self.font_size)
-        self.transcript_edit.setFont(font)
 
     @Slot(int)
     def _on_hardware_changed(self, index: int) -> None:
@@ -574,6 +692,7 @@ class MainWindow(QMainWindow):
                 added_count += 1
 
         self._refresh_batch_table()
+        self._auto_save_session_queue()
         self.tabs.setCurrentIndex(1)  # Switch to Batch tab
         self.statusBar().showMessage(f"Added {added_count} audio file(s) to Batch queue.")
 
@@ -615,29 +734,50 @@ class MainWindow(QMainWindow):
         if folder:
             self.dest_batch_dir = Path(folder)
             self.txt_batch_dest.setText(str(self.dest_batch_dir))
+            self._auto_save_session_queue()
+
+    def _on_batch_dest_text_changed(self, text: str) -> None:
+        """Handle manual typing or update to destination path."""
+        if text.strip():
+            self.dest_batch_dir = Path(text.strip())
+            self._auto_save_session_queue()
 
     def _refresh_batch_table(self) -> None:
-        """Update batch table rows to reflect self.batch_items."""
+        """Update batch table rows to reflect self.batch_items (5 columns)."""
         self.batch_table.setRowCount(len(self.batch_items))
         for row, item in enumerate(self.batch_items):
+            # Col 0: #
             self.batch_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
+
+            # Col 1: File Name
             self.batch_table.setItem(row, 1, QTableWidgetItem(item.source_file.name))
 
-            rel_str = str(item.rel_path.parent) if item.rel_path.parent != Path(".") else ""
-            self.batch_table.setItem(row, 2, QTableWidgetItem(rel_str))
-
+            # Col 2: Size (MB)
             size_mb = item.source_file.stat().st_size / (1024 * 1024) if item.source_file.exists() else 0.0
-            self.batch_table.setItem(row, 3, QTableWidgetItem(f"{size_mb:.2f} MB"))
+            self.batch_table.setItem(row, 2, QTableWidgetItem(f"{size_mb:.2f} MB"))
 
+            # Col 3: Status
             status_item = QTableWidgetItem(item.status)
             self._apply_status_color(status_item, item.status)
-            self.batch_table.setItem(row, 4, status_item)
+            self.batch_table.setItem(row, 3, status_item)
 
-            detail_str = item.error_message or (
-                str(self.dest_batch_dir / item.rel_path.parent / item.source_file.stem)
-                if item.status == "Completed" else ""
-            )
-            self.batch_table.setItem(row, 5, QTableWidgetItem(detail_str))
+            # Col 4: Output Destination / Details
+            if item.status == "Completed":
+                out_dir = item.custom_dest_dir or (self.dest_batch_dir / item.rel_path.parent)
+                detail_str = str(out_dir / item.source_file.stem)
+            elif item.status == "Failed":
+                detail_str = f"Error: {item.error_message or 'Failed'}"
+            elif item.custom_dest_dir:
+                detail_str = f"[Custom] {item.custom_dest_dir}"
+            else:
+                detail_str = str(self.dest_batch_dir / item.rel_path.parent)
+
+            out_item = QTableWidgetItem(detail_str)
+            if item.custom_dest_dir:
+                out_item.setToolTip(f"Custom Destination: {item.custom_dest_dir}\n(Right-click or double-click to edit)")
+            else:
+                out_item.setToolTip(f"Destination: {detail_str}\n(Right-click or double-click to edit)")
+            self.batch_table.setItem(row, 4, out_item)
 
     @staticmethod
     def _apply_status_color(table_item: QTableWidgetItem, status: str) -> None:
@@ -659,6 +799,7 @@ class MainWindow(QMainWindow):
             if 0 <= r < len(self.batch_items):
                 del self.batch_items[r]
         self._refresh_batch_table()
+        self._auto_save_session_queue()
         self.statusBar().showMessage(f"Removed {len(selected_rows)} item(s) from batch queue.")
 
     def clear_batch_items(self) -> None:
@@ -667,6 +808,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Batch Running", "Cannot clear queue while batch transcription is running.")
             return
         self.batch_items.clear()
+        clear_last_session_queue()
         self._refresh_batch_table()
         self.prog_batch_overall.setValue(0)
         self.prog_batch_file.setValue(0)
@@ -685,6 +827,29 @@ class MainWindow(QMainWindow):
             )
             return
 
+        # Check if all items are already completed
+        completed_items = [it for it in self.batch_items if it.status == "Completed"]
+        if len(completed_items) == len(self.batch_items):
+            reply = QMessageBox.question(
+                self,
+                "All Files Completed",
+                "All files in the queue are already completed.\n\nDo you want to re-transcribe all files from the beginning?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                for item in self.batch_items:
+                    item.status = "Pending"
+                    item.error_message = None
+            else:
+                return
+        else:
+            # Preserve completed items and reset pending/failed/processing items
+            for item in self.batch_items:
+                if item.status != "Completed":
+                    item.status = "Pending"
+                    item.error_message = None
+
         dest_str = self.txt_batch_dest.text().strip()
         if not dest_str:
             self.dest_batch_dir = Path.home() / "Transcripts"
@@ -694,25 +859,13 @@ class MainWindow(QMainWindow):
 
         self.dest_batch_dir.mkdir(parents=True, exist_ok=True)
 
-        selected_formats = []
-        if self.cb_batch_txt.isChecked():
-            selected_formats.append(".txt")
-        if self.cb_batch_srt.isChecked():
-            selected_formats.append(".srt")
-        if self.cb_batch_vtt.isChecked():
-            selected_formats.append(".vtt")
-        if self.cb_batch_json.isChecked():
-            selected_formats.append(".json")
-
+        selected_formats = self._get_selected_batch_formats()
         if not selected_formats:
             QMessageBox.warning(self, "Format Selection", "Please select at least one output format (.txt, .srt, .vtt, or .json).")
             return
 
-        # Reset item statuses
-        for item in self.batch_items:
-            item.status = "Pending"
-            item.error_message = None
         self._refresh_batch_table()
+        self._auto_save_session_queue()
 
         self.batch_worker = BatchQueueWorker(
             items=self.batch_items,
@@ -789,14 +942,15 @@ class MainWindow(QMainWindow):
     def _on_batch_item_status_changed(self, idx: int, status: str, detail_info: str) -> None:
         if 0 <= idx < len(self.batch_items):
             self.batch_items[idx].status = status
-            item_status = self.batch_table.item(idx, 4)
+            item_status = self.batch_table.item(idx, 3)
             if item_status:
                 item_status.setText(status)
                 self._apply_status_color(item_status, status)
 
-            item_detail = self.batch_table.item(idx, 5)
+            item_detail = self.batch_table.item(idx, 4)
             if item_detail and detail_info:
                 item_detail.setText(detail_info)
+            self._auto_save_session_queue()
 
     @Slot(int, int, float)
     def _on_batch_completed(self, success_count: int, fail_count: int, elapsed_sec: float) -> None:
@@ -817,6 +971,7 @@ class MainWindow(QMainWindow):
         self.btn_batch_clear.setEnabled(True)
         self.btn_batch_open_folder.setEnabled(True)
 
+        self._auto_save_session_queue()
         self.statusBar().showMessage(f"Batch completed: {success_count} succeeded, {fail_count} failed ({elapsed_sec:.1f}s)")
 
         QMessageBox.information(
@@ -848,6 +1003,12 @@ class MainWindow(QMainWindow):
         """Open Model Download & Installation Manager."""
         dialog = ModelDownloadDialog(model_manager=self.model_manager, auto_start=auto_start, parent=self)
         dialog.model_installed.connect(self._on_model_installed)
+        dialog.exec()
+
+    @Slot()
+    def open_post_processing_dialog(self) -> None:
+        """Open AI Post-Processing Recommendations and Prompt Dialog."""
+        dialog = PostProcessingDialog(parent=self, is_dark=self.is_dark_theme)
         dialog.exec()
 
     def _auto_check_models(self) -> None:
@@ -933,6 +1094,10 @@ class MainWindow(QMainWindow):
             parent=self,
         )
 
+        existing = self.transcript_edit.toPlainText().strip()
+        if existing:
+            self.streaming_worker.set_initial_text(existing)
+
         self.streaming_worker.text_updated.connect(self._on_live_text_updated)
         self.streaming_worker.level_updated.connect(self.vu_meter.set_level)
         self.streaming_worker.status_changed.connect(lambda s: self.statusBar().showMessage(s))
@@ -962,17 +1127,20 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def stop_live_transcription(self) -> None:
-        """Stop real-time audio streaming worker."""
-        if self.streaming_worker:
-            self.streaming_worker.stop()
-            self.streaming_worker = None
-
-        self.vu_meter.set_level(0.0)
-        self.btn_start.setEnabled(True)
+        """Stop real-time audio streaming worker cleanly and safely."""
+        self.btn_stop.setEnabled(False)
         self.btn_pause.setEnabled(False)
         self.btn_pause.setText("⏸ Pause")
-        self.btn_stop.setEnabled(False)
+        self.btn_start.setEnabled(True)
         self.device_combo.setEnabled(True)
+        self.vu_meter.set_level(0.0)
+        self.statusBar().showMessage("Stopping live transcription...")
+
+        if self.streaming_worker:
+            worker = self.streaming_worker
+            self.streaming_worker = None
+            worker.stop()
+
         self.statusBar().showMessage("Live transcription stopped.")
 
     @Slot(str, str)
@@ -1005,6 +1173,8 @@ class MainWindow(QMainWindow):
         """Clear transcript editor."""
         self.transcript_edit.clear()
         self.current_segments.clear()
+        if self.streaming_worker:
+            self.streaming_worker.reset_transcript()
         self.statusBar().showMessage("Transcript cleared.")
 
     @Slot()
@@ -1018,10 +1188,308 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def closeEvent(self, event) -> None:
-        """Clean shutdown of all worker threads on window close."""
+        """Clean shutdown of all worker threads and save session state on window close."""
         self.stop_live_transcription()
         if self.batch_worker and self.batch_worker.isRunning():
             self.batch_worker.cancel()
+        self._auto_save_session_queue()
         if self.ram_timer:
             self.ram_timer.stop()
         event.accept()
+
+    # =========================================================================
+    # BATCH QUEUE PERSISTENCE, FORMATS & CONTEXT MENU
+    # =========================================================================
+    def _get_selected_batch_formats(self) -> List[str]:
+        """Return list of selected format extensions for batch export."""
+        formats = []
+        if self.cb_batch_txt.isChecked():
+            formats.append(".txt")
+        if self.cb_batch_srt.isChecked():
+            formats.append(".srt")
+        if self.cb_batch_vtt.isChecked():
+            formats.append(".vtt")
+        if self.cb_batch_json.isChecked():
+            formats.append(".json")
+        return formats
+
+    def _apply_selected_batch_formats(self, formats: List[str]) -> None:
+        """Apply format selection checkboxes from list of extensions."""
+        self.cb_batch_txt.setChecked(".txt" in formats)
+        self.cb_batch_srt.setChecked(".srt" in formats)
+        self.cb_batch_vtt.setChecked(".vtt" in formats)
+        self.cb_batch_json.setChecked(".json" in formats)
+
+    @Slot(QPoint)
+    def _on_batch_table_context_menu(self, pos: QPoint) -> None:
+        """Show context menu for batch table rows to edit destination, reset status, or remove."""
+        selected_indexes = self.batch_table.selectedIndexes()
+        selected_rows = sorted(set(index.row() for index in selected_indexes))
+
+        row_at_pos = self.batch_table.rowAt(pos.y())
+        if row_at_pos >= 0 and row_at_pos not in selected_rows:
+            self.batch_table.selectRow(row_at_pos)
+            selected_rows = [row_at_pos]
+
+        if not selected_rows:
+            return
+
+        menu = QMenu(self)
+        count_label = f" ({len(selected_rows)} items)" if len(selected_rows) > 1 else ""
+
+        act_edit_dest = menu.addAction(f"✏️ Change Output Destination...{count_label}")
+        act_reset = menu.addAction(f"🔄 Reset Status to Pending{count_label}")
+        menu.addSeparator()
+        act_remove = menu.addAction(f"➖ Remove Selected{count_label}")
+
+        first_row = selected_rows[0]
+        act_open = None
+        if len(selected_rows) == 1 and 0 <= first_row < len(self.batch_items):
+            item = self.batch_items[first_row]
+            target_dir = item.custom_dest_dir or (self.dest_batch_dir / item.rel_path.parent)
+            if target_dir.exists():
+                menu.addSeparator()
+                act_open = menu.addAction("📂 Open Destination Folder")
+
+        action = menu.exec(self.batch_table.viewport().mapToGlobal(pos))
+        if not action:
+            return
+
+        if action == act_edit_dest:
+            self._edit_output_folder_for_rows(selected_rows)
+        elif action == act_reset:
+            for r in selected_rows:
+                if 0 <= r < len(self.batch_items):
+                    self.batch_items[r].status = "Pending"
+                    self.batch_items[r].error_message = None
+            self._refresh_batch_table()
+            self._auto_save_session_queue()
+            self.statusBar().showMessage(f"Reset {len(selected_rows)} item(s) to Pending.")
+        elif action == act_remove:
+            self.remove_selected_batch_items()
+        elif act_open and action == act_open:
+            item = self.batch_items[first_row]
+            target_dir = item.custom_dest_dir or (self.dest_batch_dir / item.rel_path.parent)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(target_dir)))
+
+    @Slot(int, int)
+    def _on_batch_table_cell_double_clicked(self, row: int, col: int) -> None:
+        """Allow double-clicking on Output Destination column to edit folder directly."""
+        if col == 4 and 0 <= row < len(self.batch_items):
+            self._edit_output_folder_for_rows([row])
+
+    def _edit_output_folder_for_rows(self, rows: List[int]) -> None:
+        """Prompt user for a directory to set as custom destination for specified rows."""
+        if not rows:
+            return
+        first_item = self.batch_items[rows[0]]
+        initial_dir = first_item.custom_dest_dir or (self.dest_batch_dir / first_item.rel_path.parent)
+        if not initial_dir.exists():
+            initial_dir = self.dest_batch_dir
+
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            f"Select Output Destination Folder for {len(rows)} Item(s)",
+            str(initial_dir),
+        )
+        if folder:
+            chosen_dir = Path(folder).resolve()
+            for r in rows:
+                if 0 <= r < len(self.batch_items):
+                    self.batch_items[r].custom_dest_dir = chosen_dir
+            self._refresh_batch_table()
+            self._auto_save_session_queue()
+            self.statusBar().showMessage(f"Updated output destination for {len(rows)} item(s) to '{chosen_dir.name}'")
+
+    @Slot()
+    def save_queue_dialog(self) -> None:
+        """Save current batch queue to a JSON file to resume later."""
+        if not self.batch_items:
+            QMessageBox.information(
+                self,
+                "Save Queue",
+                "Batch queue is empty. Add files or folders first.",
+            )
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Batch Queue",
+            str(Path.home() / "batch_queue.json"),
+            "JSON Queue Files (*.json);;All Files (*)",
+        )
+        if file_path:
+            try:
+                formats = self._get_selected_batch_formats()
+                save_batch_queue(
+                    filepath=file_path,
+                    items=self.batch_items,
+                    dest_dir=self.dest_batch_dir,
+                    formats=formats,
+                )
+                completed_count = sum(1 for it in self.batch_items if it.status == "Completed")
+                self.statusBar().showMessage(f"Saved queue ({len(self.batch_items)} items) to {Path(file_path).name}")
+                QMessageBox.information(
+                    self,
+                    "Queue Saved",
+                    f"Successfully saved {len(self.batch_items)} items to:\n{file_path}\n\n"
+                    f"• Completed: {completed_count}\n"
+                    f"• Pending / Other: {len(self.batch_items) - completed_count}",
+                )
+            except Exception as exc:
+                logger.exception("Failed to save queue: %s", exc)
+                QMessageBox.critical(self, "Save Error", f"Could not save queue file:\n{exc}")
+
+    @Slot()
+    def load_queue_dialog(self, *args, append_mode: Optional[bool] = None) -> None:
+        """Load one or multiple batch queues from JSON file(s) with Append or Replace options."""
+        if self.batch_worker and self.batch_worker.isRunning():
+            QMessageBox.warning(self, "Batch Running", "Cannot load queue while batch transcription is running.")
+            return
+
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Load Batch Queue File(s) / เลือกไฟล์คิวงาน (เลือกได้หลายไฟล์พร้อมกัน)",
+            str(Path.home()),
+            "JSON Queue Files (*.json);;All Files (*)",
+        )
+        if not file_paths:
+            return
+
+        # If current queue already contains items, ask whether to Append or Replace
+        if append_mode is None:
+            if self.batch_items:
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("Load Batch Queue / โหลดคิวงาน")
+                msg_box.setIcon(QMessageBox.Question)
+                msg_box.setText(
+                    f"ปัจจุบันมีรายการในคิวอยู่แล้ว {len(self.batch_items)} ไฟล์\n\n"
+                    f"คุณต้องการนำไฟล์จาก {len(file_paths)} คิวงานที่เลือก มาดำเนินการอย่างไร?"
+                )
+                btn_append = msg_box.addButton("➕ เพิ่มต่อท้าย (Append)", QMessageBox.AcceptRole)
+                btn_replace = msg_box.addButton("🔄 แทนที่คิวเดิม (Replace)", QMessageBox.DestructiveRole)
+                btn_cancel = msg_box.addButton("ยกเลิก (Cancel)", QMessageBox.RejectRole)
+                msg_box.setDefaultButton(btn_append)
+                msg_box.exec()
+
+                clicked = msg_box.clickedButton()
+                if clicked == btn_cancel or clicked is None:
+                    return
+                append_mode = (clicked == btn_append)
+            else:
+                append_mode = True
+
+        if not append_mode:
+            self.batch_items.clear()
+
+        existing_paths = {it.source_file.resolve() for it in self.batch_items}
+        newly_added_count = 0
+        status_updated_count = 0
+        loaded_files_count = 0
+        last_dest_dir = None
+        last_formats = None
+
+        for fp in file_paths:
+            try:
+                items, dest_dir, formats = load_batch_queue(fp)
+                if not items:
+                    continue
+                loaded_files_count += 1
+                if dest_dir and not last_dest_dir:
+                    last_dest_dir = dest_dir
+                if formats and not last_formats:
+                    last_formats = formats
+
+                for item in items:
+                    resolved_p = item.source_file.resolve()
+                    if resolved_p not in existing_paths:
+                        self.batch_items.append(item)
+                        existing_paths.add(resolved_p)
+                        newly_added_count += 1
+                    else:
+                        # If file already exists, update Completed status if loaded item has it
+                        for existing in self.batch_items:
+                            if existing.source_file.resolve() == resolved_p:
+                                if item.status == "Completed" and existing.status != "Completed":
+                                    existing.status = "Completed"
+                                    existing.generated_files = item.generated_files
+                                    status_updated_count += 1
+            except Exception as exc:
+                logger.exception("Failed to load queue from %s: %s", fp, exc)
+
+        if loaded_files_count == 0:
+            QMessageBox.warning(self, "Load Queue", "No valid queue items found in the selected file(s).")
+            return
+
+        if (not append_mode or not self.dest_batch_dir.exists()) and last_dest_dir:
+            self.dest_batch_dir = last_dest_dir
+            self.txt_batch_dest.setText(str(self.dest_batch_dir))
+        if not append_mode and last_formats:
+            self._apply_selected_batch_formats(last_formats)
+
+        self._refresh_batch_table()
+        self._auto_save_session_queue()
+
+        completed_count = sum(1 for it in self.batch_items if it.status == "Completed")
+        pending_count = len(self.batch_items) - completed_count
+        self.statusBar().showMessage(
+            f"Loaded {loaded_files_count} queue file(s): +{newly_added_count} items (Total: {len(self.batch_items)})."
+        )
+
+        update_msg = f"\n• อัปเดตสถานะเป็นเสร็จแล้ว (Updated to Completed): {status_updated_count}" if status_updated_count > 0 else ""
+        mode_str = "เพิ่มต่อท้าย (Appended)" if append_mode else "แทนที่คิวใหม่ (Replaced)"
+        QMessageBox.information(
+            self,
+            "Queue Loaded",
+            f"โหลดคิวงานสำเร็จจาก {loaded_files_count} ไฟล์ ({mode_str}):\n"
+            f"• เพิ่มไฟล์ใหม่: {newly_added_count} รายการ{update_msg}\n"
+            f"• รวมรายการในคิวทั้งหมด: {len(self.batch_items)} รายการ\n\n"
+            f"  - ✅ เสร็จแล้ว (Completed): {completed_count}\n"
+            f"  - ⏳ รอดำเนินการ (Pending): {pending_count}\n\n"
+            f"กด '🚀 Start Batch Transcription' เพื่อเริ่มแปลงไฟล์ต่อได้ทันที",
+        )
+
+    def _auto_save_session_queue(self) -> None:
+        """Auto-save current queue state to cache for crash/accidental close recovery."""
+        try:
+            formats = self._get_selected_batch_formats()
+            save_last_session_queue(
+                items=self.batch_items,
+                dest_dir=self.dest_batch_dir,
+                formats=formats,
+            )
+        except Exception as exc:
+            logger.debug("Failed to auto-save session queue: %s", exc)
+
+    def _restore_last_session_queue(self) -> None:
+        """Restore batch queue from last session cache on startup."""
+        try:
+            items, dest_dir, formats = load_last_session_queue()
+            if items:
+                # If an item was left in 'Processing' state (due to crash or abrupt kill), reset it to 'Pending'
+                for item in items:
+                    if item.status == "Processing":
+                        item.status = "Pending"
+
+                self.batch_items = items
+                if dest_dir:
+                    self.dest_batch_dir = dest_dir
+                    self.txt_batch_dest.setText(str(self.dest_batch_dir))
+                if formats:
+                    self._apply_selected_batch_formats(formats)
+
+                self._refresh_batch_table()
+                completed = sum(1 for it in items if it.status == "Completed")
+                pending = len(items) - completed
+                self.statusBar().showMessage(
+                    f"Restored previous session queue: {len(items)} items ({completed} completed, {pending} pending)."
+                )
+                logger.info(
+                    "Restored %d items from last session queue (%d completed, %d pending)",
+                    len(items),
+                    completed,
+                    pending,
+                )
+        except Exception as exc:
+            logger.warning("Failed to restore last session queue: %s", exc)
+

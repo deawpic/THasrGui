@@ -66,6 +66,10 @@ class ExportDialog(QDialog):
 
         # Button Row
         btn_layout = QHBoxLayout()
+        self.btn_post_process = QPushButton("💡 AI Post-Processing Prompt", self)
+        self.btn_post_process.setToolTip("ดูคำแนะนำและ Prompt สำหรับส่งข้อความให้ AI (Gemini/ChatGPT/Claude) ขัดเกลาคำผิด")
+        self.btn_post_process.clicked.connect(self._open_post_processing)
+
         self.btn_cancel = QPushButton("Cancel")
         self.btn_save = QPushButton("Save As...")
         self.btn_save.setStyleSheet("background-color: #89b4fa; color: #11111b; font-weight: bold;")
@@ -73,10 +77,23 @@ class ExportDialog(QDialog):
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self._on_save)
 
+        btn_layout.addWidget(self.btn_post_process)
         btn_layout.addStretch()
         btn_layout.addWidget(self.btn_cancel)
         btn_layout.addWidget(self.btn_save)
         layout.addLayout(btn_layout)
+
+    def _open_post_processing(self) -> None:
+        from .post_processing_dialog import PostProcessingDialog
+        is_dark = True
+        p = self.parent()
+        while p is not None:
+            if hasattr(p, "is_dark_theme"):
+                is_dark = p.is_dark_theme
+                break
+            p = p.parent()
+        dialog = PostProcessingDialog(parent=self, is_dark=is_dark)
+        dialog.exec()
 
     def _on_save(self) -> None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

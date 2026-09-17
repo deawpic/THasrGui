@@ -103,3 +103,18 @@ def test_audio_device_manager():
         assert isinstance(dev.index, int)
         assert isinstance(dev.name, str)
         assert dev.max_input_channels > 0
+
+
+def test_audio_capture_engine_safe_stop():
+    """Verify AudioCaptureEngine stop() is re-entrant and cleanly stops without exceptions."""
+    from typhoon_transcriber.audio.capture_engine import AudioCaptureEngine
+
+    engine = AudioCaptureEngine()
+    # Stopping an unstarted engine should be a safe no-op
+    engine.stop()
+    assert not engine.is_running
+    assert engine.stream is None
+
+    # Calling stop() multiple times consecutively must be safe and idempotent
+    engine.stop()
+    engine.stop()

@@ -44,6 +44,7 @@ VAD_SILENCE_CHUNKS_BEFORE_FLUSH = 3
 DEFAULT_CACHE_DIR = Path(os.environ.get("TYPHOON_CACHE_DIR", Path.home() / ".cache" / "typhoon-asr"))
 DEFAULT_MODEL_NAME = "typhoon_asr_realtime.onnx"
 DEFAULT_TOKENIZER_NAME = "tokenizer.model"
+LAST_SESSION_QUEUE_FILE = DEFAULT_CACHE_DIR / "last_session_queue.json"
 
 # Remote Asset Metadata for Model Auto-Downloader
 # Uses official Typhoon FastConformer RNN-T ONNX weights converted from scb-10x/typhoon-asr

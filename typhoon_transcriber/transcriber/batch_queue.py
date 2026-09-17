@@ -4,14 +4,15 @@ Multi-file & Multi-folder Batch Queue Transcriber with Directory Hierarchy Mirro
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Union, Dict, Set
+from typing import List, Optional, Union, Dict, Set, Tuple, Any
 import os
 import time
+import json
 import logging
 import numpy as np
 from PySide6.QtCore import QThread, Signal
 
-from ..config import SAMPLE_RATE, SUPPORTED_AUDIO_EXTENSIONS
+from ..config import SAMPLE_RATE, SUPPORTED_AUDIO_EXTENSIONS, LAST_SESSION_QUEUE_FILE
 from ..models.onnx_engine import TyphoonONNXEngine
 from .batch_worker import load_audio_file
 from .exporter import TranscriptExporter, TranscriptSegment
@@ -29,6 +30,109 @@ class BatchItem:
     error_message: Optional[str] = None
     duration_sec: float = 0.0
     generated_files: List[Path] = field(default_factory=list)
+    custom_dest_dir: Optional[Path] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize BatchItem to dictionary for queue persistence."""
+        return {
+            "source_file": str(self.source_file),
+            "root_source_dir": str(self.root_source_dir) if self.root_source_dir else None,
+            "rel_path": str(self.rel_path),
+            "status": self.status,
+            "error_message": self.error_message,
+            "duration_sec": self.duration_sec,
+            "generated_files": [str(p) for p in self.generated_files],
+            "custom_dest_dir": str(self.custom_dest_dir) if self.custom_dest_dir else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "BatchItem":
+        """Deserialize BatchItem from dictionary."""
+        return cls(
+            source_file=Path(data["source_file"]),
+            root_source_dir=Path(data["root_source_dir"]) if data.get("root_source_dir") else None,
+            rel_path=Path(data.get("rel_path", ".")),
+            status=data.get("status", "Pending"),
+            error_message=data.get("error_message"),
+            duration_sec=float(data.get("duration_sec", 0.0)),
+            generated_files=[Path(p) for p in data.get("generated_files", [])],
+            custom_dest_dir=Path(data["custom_dest_dir"]) if data.get("custom_dest_dir") else None,
+        )
+
+
+def save_batch_queue(
+    filepath: Union[str, Path],
+    items: List[BatchItem],
+    dest_dir: Optional[Union[str, Path]] = None,
+    formats: Optional[List[str]] = None,
+) -> None:
+    """Save batch items and queue settings to a JSON file."""
+    p = Path(filepath).resolve()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": "1.0",
+        "saved_at": time.time(),
+        "dest_dir": str(dest_dir) if dest_dir else None,
+        "formats": formats or [".txt", ".srt"],
+        "items": [item.to_dict() for item in items],
+    }
+    tmp_path = p.with_suffix(p.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    tmp_path.replace(p)
+
+
+def load_batch_queue(
+    filepath: Union[str, Path],
+) -> Tuple[List[BatchItem], Optional[Path], Optional[List[str]]]:
+    """Load batch items and queue settings from a JSON file."""
+    p = Path(filepath).resolve()
+    if not p.exists():
+        return [], None, None
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    items_data = data.get("items", [])
+    items = [BatchItem.from_dict(d) for d in items_data]
+    dest_dir = Path(data["dest_dir"]) if data.get("dest_dir") else None
+    formats = data.get("formats")
+    return items, dest_dir, formats
+
+
+def save_last_session_queue(
+    items: List[BatchItem],
+    dest_dir: Optional[Union[str, Path]] = None,
+    formats: Optional[List[str]] = None,
+    session_file: Optional[Path] = None,
+) -> None:
+    """Save current batch queue to session cache for auto-recovery."""
+    sf = session_file or LAST_SESSION_QUEUE_FILE
+    try:
+        save_batch_queue(sf, items, dest_dir, formats)
+    except Exception as exc:
+        logger.warning("Failed to save last session queue: %s", exc)
+
+
+def load_last_session_queue(
+    session_file: Optional[Path] = None,
+) -> Tuple[List[BatchItem], Optional[Path], Optional[List[str]]]:
+    """Load last session queue from session cache."""
+    sf = session_file or LAST_SESSION_QUEUE_FILE
+    try:
+        if sf.exists():
+            return load_batch_queue(sf)
+    except Exception as exc:
+        logger.warning("Failed to load last session queue: %s", exc)
+    return [], None, None
+
+
+def clear_last_session_queue(session_file: Optional[Path] = None) -> None:
+    """Delete session cache file."""
+    sf = session_file or LAST_SESSION_QUEUE_FILE
+    try:
+        if sf.exists():
+            sf.unlink()
+    except Exception as exc:
+        logger.warning("Failed to clear last session queue: %s", exc)
 
 
 def scan_files_and_folders(entries: List[Union[str, Path]]) -> List[BatchItem]:
@@ -138,20 +242,33 @@ class BatchQueueWorker(QThread):
                 logger.info("Batch conversion cancelled at item %d/%d", idx + 1, total_items)
                 break
 
+            # Skip items that are already completed (resuming queue) or skipped
+            if item.status == "Completed":
+                success_count += 1
+                out_dir = item.custom_dest_dir or (self.dest_root_dir / item.rel_path.parent)
+                self.item_status_changed.emit(idx, "Completed", f"Preserved ({out_dir.name}/{item.source_file.stem})")
+                continue
+
+            if item.status == "Skipped":
+                continue
+
             item.status = "Processing"
             self.item_status_changed.emit(idx, "Processing", f"Transcribing: {item.source_file.name}")
 
-            # 1. Compute mirrored destination directory
-            mirrored_dir = self.dest_root_dir / item.rel_path.parent
-            mirrored_dir.mkdir(parents=True, exist_ok=True)
+            # 1. Compute destination directory (custom override or mirrored subfolder)
+            if item.custom_dest_dir:
+                dest_dir = Path(item.custom_dest_dir).resolve()
+            else:
+                dest_dir = self.dest_root_dir / item.rel_path.parent
+            dest_dir.mkdir(parents=True, exist_ok=True)
             stem = item.source_file.stem
 
             # 2. Check if output files already exist
-            out_files = [mirrored_dir / f"{stem}{fmt}" for fmt in self.formats]
+            out_files = [dest_dir / f"{stem}{fmt}" for fmt in self.formats]
             if not self.overwrite and all(f.exists() for f in out_files):
                 item.status = "Skipped"
                 item.generated_files = out_files
-                self.item_status_changed.emit(idx, "Skipped", f"Already exists in {mirrored_dir}")
+                self.item_status_changed.emit(idx, "Skipped", f"Already exists in {dest_dir}")
                 success_count += 1
                 continue
 
@@ -217,7 +334,7 @@ class BatchQueueWorker(QThread):
                 # 4. Save to all selected mirrored formats
                 item.generated_files.clear()
                 for fmt in self.formats:
-                    out_path = mirrored_dir / f"{stem}{fmt}"
+                    out_path = dest_dir / f"{stem}{fmt}"
                     if fmt == ".txt":
                         TranscriptExporter.export_txt(full_text, out_path)
                     elif fmt == ".srt":
@@ -230,7 +347,7 @@ class BatchQueueWorker(QThread):
 
                 item.status = "Completed"
                 success_count += 1
-                self.item_status_changed.emit(idx, "Completed", f"Saved to {mirrored_dir.name}/{stem}")
+                self.item_status_changed.emit(idx, "Completed", f"Saved to {dest_dir.name}/{stem}")
 
             except Exception as exc:
                 logger.exception("Failed to transcribe %s: %s", item.source_file, exc)

@@ -232,7 +232,6 @@ class BatchProgressDialog(QDialog):
         layout.addWidget(self.prog_overall)
 
         self.lbl_file = QLabel("Current File: Initializing...", self)
-        self.lbl_file.setStyleSheet("color: #cdd6f4;")
         layout.addWidget(self.lbl_file)
 
         self.prog_file = QProgressBar(self)
