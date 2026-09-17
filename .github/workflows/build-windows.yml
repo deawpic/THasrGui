@@ -1,0 +1,138 @@
+name: Build Windows Standalone Executable
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build TyphoonTranscriber.exe (Windows x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Astral uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Determine Application Directory
+        id: app_info
+        shell: pwsh
+        run: |
+          if (Test-Path "src/pyproject.toml") {
+              Write-Host "Detected application in src/ directory"
+              "app_dir=src" >> $env:GITHUB_OUTPUT
+              "spec_file=src/typhoon_transcriber.spec" >> $env:GITHUB_OUTPUT
+          } else {
+              Write-Host "Detected application in repository root"
+              "app_dir=." >> $env:GITHUB_OUTPUT
+              "spec_file=typhoon_transcriber.spec" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Install Dependencies via uv
+        shell: pwsh
+        run: |
+          $appDir = "${{ steps.app_info.outputs.app_dir }}"
+          Write-Host "Installing dependencies in $appDir..."
+          uv sync --directory $appDir --dev
+
+      - name: Run Test Suite Verification
+        shell: pwsh
+        run: |
+          $appDir = "${{ steps.app_info.outputs.app_dir }}"
+          Write-Host "Running pytest verification in $appDir..."
+          uv run --directory $appDir pytest tests/ -v
+
+      - name: Build Executable with PyInstaller
+        shell: pwsh
+        run: |
+          $appDir = "${{ steps.app_info.outputs.app_dir }}"
+          $specFile = "${{ steps.app_info.outputs.spec_file }}"
+          Write-Host "Packaging standalone executable with PyInstaller ($specFile)..."
+          uv run --directory $appDir pyinstaller $specFile --clean --noconfirm
+
+      - name: Prepare Release Package & ZIP Bundle
+        shell: pwsh
+        run: |
+          $appDir = "${{ steps.app_info.outputs.app_dir }}"
+          $distDir = Join-Path $appDir "dist"
+          $exePath = Join-Path $distDir "TyphoonTranscriber.exe"
+
+          if (-not (Test-Path $exePath)) {
+              Write-Error "CRITICAL: TyphoonTranscriber.exe was not created in $distDir!"
+              exit 1
+          }
+
+          $exeSizeMB = [math]::Round(((Get-Item $exePath).Length / 1MB), 2)
+          Write-Host "SUCCESS: Built TyphoonTranscriber.exe ($exeSizeMB MB)"
+
+          $releaseDir = "TyphoonTranscriber-Windows-x64"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          Copy-Item $exePath -Destination $releaseDir
+
+          # Include documentation if available
+          if (Test-Path "$appDir/README.md") {
+              Copy-Item "$appDir/README.md" -Destination $releaseDir
+          } elseif (Test-Path "README.md") {
+              Copy-Item "README.md" -Destination $releaseDir
+          }
+
+          # Create models folder with offline guide
+          $modelsDir = Join-Path $releaseDir "models"
+          New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
+          $modelInfo = @"
+          Typhoon ASR Offline Models Directory
+          ====================================
+          For 100% offline portable usage, place the official model files here:
+          1. encoder-fastconformer-quran-ar.onnx
+          2. decoder_joint-fastconformer-quran-ar.onnx
+          3. vocab.json
+
+          Download links: https://huggingface.co/wannaphong/typhoon-asr-realtime-onnx
+          Note: If launched with internet access, TyphoonTranscriber can automatically download them for you.
+          "@
+          $modelInfo | Out-File -Encoding utf8 (Join-Path $modelsDir "README_MODELS.txt")
+
+          # Create compressed distribution archive
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath "TyphoonTranscriber-Windows-x64.zip" -Force
+          Write-Host "Generated TyphoonTranscriber-Windows-x64.zip successfully."
+
+      - name: Upload Standalone Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TyphoonTranscriber-Windows-x64-Exe
+          path: ${{ steps.app_info.outputs.app_dir }}/dist/TyphoonTranscriber.exe
+          if-no-files-found: error
+
+      - name: Upload Release ZIP Bundle Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TyphoonTranscriber-Windows-x64-Zip
+          path: TyphoonTranscriber-Windows-x64.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (on Tag Push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            TyphoonTranscriber-Windows-x64.zip
+            ${{ steps.app_info.outputs.app_dir }}/dist/TyphoonTranscriber.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: true

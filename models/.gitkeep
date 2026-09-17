@@ -1,0 +1,3 @@
+# Typhoon ASR Model Checkpoint Directory
+# Place official or custom ONNX models and tokenizers here for portable offline usage.
+# Weight files (*.onnx, *.model, *.bin, etc.) are excluded from git by .gitignore.

@@ -1,0 +1,109 @@
+# =====================================================================
+# Typhoon ASR Desktop Transcriber — Application Root .gitignore (src/)
+# =====================================================================
+
+# --- Byte-compiled / optimized / C-extensions ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.dylib
+*.dll
+*.pyd
+
+# --- Virtual Environments & Tooling ---
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+python/
+
+# --- Packaging, Distribution & PyInstaller ---
+build/
+dist/
+*.manifest
+!typhoon_transcriber.spec
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+*.whl
+share/python-wheels/
+sdist/
+MANIFEST
+
+# --- Testing, Profiling & Linter Caches ---
+.pytest_cache/
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+htmlcov/
+.cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- IDE, Text Editors & Operating System Metadata ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+*.Identifier
+
+# --- Typhoon ASR Model Weights & Large Checkpoints ---
+# Exclude heavy weights (>500MB) from git while preserving directory
+models/*.onnx
+models/*.onnx_data
+models/*.model
+models/*.bin
+models/*.safetensors
+models/*.json
+models/*.pt
+models/*.pth
+*.onnx
+*.onnx_data
+*.tmp
+!models/.gitkeep
+
+# --- Audio & Video Media Files (prevent committing heavy recordings) ---
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.opus
+*.aac
+*.wma
+*.alac
+*.mp4
+*.mkv
+*.webm
+*.avi
+*.mov
+*.flv
+
+# --- Transcripts, Subtitles & Output Dirs ---
+Transcripts/
+TranscriptsOut/
+transcripts/
+outputs/
+export/
+*.srt
+*.vtt
+*.transcript.json
+
+# --- Environment Variables, Local Configs & Logs ---
+.env
+.env.local
+.env.*.local
+*.log
+*.bak
