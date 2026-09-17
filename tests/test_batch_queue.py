@@ -37,7 +37,7 @@ def test_scan_files_and_folders_recursive_hierarchy():
         items = scan_files_and_folders([root])
 
         assert len(items) == 3
-        rel_paths = {str(item.rel_path) for item in items}
+        rel_paths = {item.rel_path.as_posix() for item in items}
         assert "2026/Q1/meeting.wav" in rel_paths
         assert "2026/Q1/notes.flac" in rel_paths
         assert "Interviews/interview_01.wav" in rel_paths
@@ -59,7 +59,7 @@ def test_batch_queue_worker_mirrored_destination_execution():
         # Scan
         items = scan_files_and_folders([src_root])
         assert len(items) == 1
-        assert str(items[0].rel_path) == "DepartmentA/Meetings/conf_call.wav"
+        assert items[0].rel_path.as_posix() == "DepartmentA/Meetings/conf_call.wav"
 
         # Execute Batch Worker with Destination Mirroring
         dest_root = Path(dest_tmp) / "Transcripts"

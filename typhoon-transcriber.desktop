@@ -1,9 +1,0 @@
-[Desktop Entry]
-Name=Typhoon ASR Transcriber
-Comment=Thai Real-Time Offline Speech-to-Text Desktop Transcriber
-Exec=/home/deaw/.local/bin/uv run --directory /home/deaw/Projects/THasr/src python -m typhoon_transcriber.main
-Icon=audio-input-microphone
-Terminal=false
-Type=Application
-Categories=AudioVideo;Audio;Utility;
-StartupNotify=true

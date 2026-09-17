@@ -107,3 +107,4 @@ export/
 .env.*.local
 *.log
 *.bak
+*.desktop

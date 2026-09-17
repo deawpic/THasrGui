@@ -173,6 +173,16 @@ def test_onnx_engine_session_creation_fallback(monkeypatch, tmp_path):
         def get_outputs(self):
             return []
 
+    monkeypatch.setattr(
+        "onnxruntime.get_available_providers",
+        lambda: [
+            "CUDAExecutionProvider",
+            "DirectMLExecutionProvider",
+            "ROCmExecutionProvider",
+            "OpenVINOExecutionProvider",
+            "CPUExecutionProvider",
+        ],
+    )
     monkeypatch.setattr("onnxruntime.InferenceSession", MockSession)
 
     engine = TyphoonONNXEngine(user_preference="GPU")
