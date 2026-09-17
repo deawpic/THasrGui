@@ -128,11 +128,14 @@ jobs:
 
       - name: Publish GitHub Release (on Tag Push)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            TyphoonTranscriber-Windows-x64.zip
-            ${{ steps.app_info.outputs.app_dir }}/dist/TyphoonTranscriber.exe
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $appDir = "${{ steps.app_info.outputs.app_dir }}"
+          $exePath = Join-Path $appDir "dist" "TyphoonTranscriber.exe"
+          $zipPath = "TyphoonTranscriber-Windows-x64.zip"
+          $tagName = "${{ github.ref_name }}"
+
+          Write-Host "Publishing GitHub Release for $tagName via gh CLI..."
+          gh release create $tagName $zipPath $exePath --title "$tagName - Windows x64 Standalone Executable" --generate-notes
