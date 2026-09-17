@@ -1,9 +1,10 @@
 """
 Packaging and Entry Point Verification Tests.
 Validates that entry points, PyInstaller submodule collection, and direct execution
-do not fail with relative import or missing module errors.
+do not fail with relative import or missing module errors across Windows and Linux.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -15,33 +16,35 @@ def test_main_script_direct_execution_no_relative_import_error():
     main_py_path = Path(__file__).resolve().parent.parent / "typhoon_transcriber" / "main.py"
     assert main_py_path.exists()
 
-    # Execute main.py directly as __main__ with QApplication.exec patched to return immediately
-    code = (
-        "from unittest.mock import patch\n"
-        "from PySide6.QtWidgets import QApplication\n"
-        "import runpy\n"
-        "with patch.object(QApplication, 'exec', return_value=0):\n"
-        f"    runpy.run_path(r'{main_py_path}', run_name='__main__')\n"
-    )
+    env = os.environ.copy()
+    env["QT_QPA_PLATFORM"] = "offscreen"
+
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [sys.executable, str(main_py_path), "--version"],
         capture_output=True,
         text=True,
-        env={"QT_QPA_PLATFORM": "offscreen", "PATH": subprocess.os.environ.get("PATH", "")},
+        env=env,
         timeout=15,
     )
-    assert result.returncode == 0
+    assert result.returncode == 0, f"Failed with stderr: {result.stderr}"
+    assert "Typhoon ASR Transcriber" in result.stdout
     assert "attempted relative import with no known parent package" not in result.stderr
 
 
 def test_module_main_execution():
     """Verify python -m typhoon_transcriber module entrypoint can be invoked without error."""
+    env = os.environ.copy()
+    env["QT_QPA_PLATFORM"] = "offscreen"
+
     result = subprocess.run(
-        [sys.executable, "-c", "import typhoon_transcriber.__main__"],
+        [sys.executable, "-m", "typhoon_transcriber", "--version"],
         capture_output=True,
         text=True,
+        env=env,
+        timeout=15,
     )
-    assert result.returncode == 0
+    assert result.returncode == 0, f"Failed with stderr: {result.stderr}"
+    assert "Typhoon ASR Transcriber" in result.stdout
     assert "ImportError" not in result.stderr
 
 

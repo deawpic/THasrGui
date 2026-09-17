@@ -17,7 +17,7 @@ if not __package__:
             sys.path.insert(0, str(candidate))
             break
 
-from typhoon_transcriber.config import APP_NAME, DEFAULT_CACHE_DIR
+from typhoon_transcriber.config import APP_NAME, APP_VERSION, DEFAULT_CACHE_DIR
 from typhoon_transcriber.models.onnx_engine import TyphoonONNXEngine
 from typhoon_transcriber.models.model_manager import ModelManager
 from typhoon_transcriber.ui.main_window import MainWindow
@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 def main() -> int:
     """Main application initialization and event loop."""
+    if "--version" in sys.argv or "-v" in sys.argv:
+        print(f"{APP_NAME} v{APP_VERSION}")
+        return 0
+
     logger.info("Starting %s...", APP_NAME)
 
     # Initialize Qt Application with High-DPI support
