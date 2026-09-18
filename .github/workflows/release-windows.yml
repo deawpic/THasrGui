@@ -1,0 +1,175 @@
+name: Release Windows Standalone (Nuitka)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build TyphoonTranscriber (Windows x64 Nuitka Standalone)
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Astral uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Set up MSVC Compiler
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Determine Application Directory
+        id: app_info
+        shell: pwsh
+        run: |
+          if (Test-Path "src/pyproject.toml") {
+              Write-Host "Detected application in src/ directory"
+              "app_dir=src" >> $env:GITHUB_OUTPUT
+              "lock_file=src/uv.lock" >> $env:GITHUB_OUTPUT
+          } else {
+              Write-Host "Detected application in repository root"
+              "app_dir=." >> $env:GITHUB_OUTPUT
+              "lock_file=uv.lock" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Cache Nuitka Compilation Caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\Nuitka\Nuitka\Cache
+            ~/.cache/Nuitka
+          key: nuitka-cache-windows-${{ hashFiles(steps.app_info.outputs.lock_file) }}-${{ github.run_id }}
+          restore-keys: |
+            nuitka-cache-windows-${{ hashFiles(steps.app_info.outputs.lock_file) }}-
+            nuitka-cache-windows-
+
+      - name: Install Dependencies via uv
+        shell: pwsh
+        run: |
+          $appDir = "${{ steps.app_info.outputs.app_dir }}"
+          Write-Host "Installing dependencies in $appDir..."
+          uv sync --directory $appDir --dev
+
+      - name: Run Test Suite Verification
+        shell: pwsh
+        run: |
+          $appDir = "${{ steps.app_info.outputs.app_dir }}"
+          Write-Host "Running pytest verification before compiling in $appDir..."
+          uv run --directory $appDir pytest tests/ -v
+
+      - name: Build Standalone Directory with Nuitka
+        shell: pwsh
+        run: |
+          $appDir = "${{ steps.app_info.outputs.app_dir }}"
+          Write-Host "Packaging standalone onedir application with Nuitka in $appDir..."
+          uv run --directory $appDir nuitka `
+            --standalone `
+            --enable-plugin=pyside6 `
+            --windows-console-mode=disable `
+            --output-dir=dist `
+            --output-folder-name=TyphoonTranscriber `
+            --output-filename=TyphoonTranscriber.exe `
+            --follow-import-to=typhoon_transcriber `
+            --include-package-data=sounddevice `
+            --include-package-data=soundfile `
+            --include-package-data=sentencepiece `
+            --include-package-data=onnxruntime `
+            --nofollow-import-to=torch,torchaudio,nemo,tkinter,matplotlib,scipy,IPython,jupyter,notebook `
+            typhoon_transcriber/main.py
+
+      - name: Prepare Release Package & ZIP Bundle
+        shell: pwsh
+        run: |
+          $appDir = "${{ steps.app_info.outputs.app_dir }}"
+          $distBaseDir = Join-Path $appDir "dist"
+
+          # Locate Nuitka standalone output directory (e.g. dist/TyphoonTranscriber.dist or dist/TyphoonTranscriber)
+          $nuitkaDir = Get-ChildItem -Path $distBaseDir -Directory | Where-Object { $_.Name -like "*TyphoonTranscriber*" } | Select-Object -First 1
+
+          if ($null -eq $nuitkaDir -or -not (Test-Path $nuitkaDir.FullName)) {
+              Write-Error "CRITICAL: Nuitka standalone directory was not found in $distBaseDir!"
+              exit 1
+          }
+
+          $exePath = Join-Path $nuitkaDir.FullName "TyphoonTranscriber.exe"
+          if (-not (Test-Path $exePath)) {
+              Write-Error "CRITICAL: TyphoonTranscriber.exe was not found inside $($nuitkaDir.FullName)!"
+              exit 1
+          }
+
+          Write-Host "SUCCESS: Found Nuitka standalone folder at: $($nuitkaDir.FullName)"
+          Write-Host "SUCCESS: Found executable at: $exePath"
+
+          $releaseDir = "TyphoonTranscriber-Windows-x64"
+          if (Test-Path $releaseDir) {
+              Remove-Item -Recurse -Force $releaseDir
+          }
+
+          # Copy entire standalone directory contents into release distribution folder
+          Copy-Item -Path "$($nuitkaDir.FullName)\*" -Destination $releaseDir -Recurse -Force
+
+          # Include documentation if available
+          if (Test-Path "$appDir/README.md") {
+              Copy-Item "$appDir/README.md" -Destination $releaseDir
+          } elseif (Test-Path "README.md") {
+              Copy-Item "README.md" -Destination $releaseDir
+          }
+
+          # Create models folder with offline guide
+          $modelsDir = Join-Path $releaseDir "models"
+          New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
+          $modelInfo = @"
+          Typhoon ASR Offline Models Directory
+          ====================================
+          For 100% offline portable usage, place the official model files here:
+          1. encoder-fastconformer-quran-ar.onnx
+          2. decoder_joint-fastconformer-quran-ar.onnx
+          3. vocab.json
+
+          Download links: https://huggingface.co/wannaphong/typhoon-asr-realtime-onnx
+          Note: If launched with internet access, TyphoonTranscriber can automatically download them for you.
+          "@
+          $modelInfo | Out-File -Encoding utf8 (Join-Path $modelsDir "README_MODELS.txt")
+
+          # Create compressed distribution archive
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath "TyphoonTranscriber-Windows-x64.zip" -Force
+          Write-Host "Generated TyphoonTranscriber-Windows-x64.zip successfully."
+
+      - name: Upload Standalone Distribution ZIP Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TyphoonTranscriber-Windows-x64-Zip
+          path: TyphoonTranscriber-Windows-x64.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (on Tag Push or Release)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tagName = "${{ github.ref_name }}"
+          if ($null -eq $tagName -or $tagName -eq "") {
+              $tagName = "${{ github.event.release.tag_name }}"
+          }
+          $zipPath = "TyphoonTranscriber-Windows-x64.zip"
+
+          Write-Host "Publishing GitHub Release for $tagName ($zipPath) via gh CLI..."
+          gh release upload $tagName $zipPath --clobber 2>$null
+          if ($LASTEXITCODE -ne 0) {
+              gh release create $tagName $zipPath --title "$tagName - Windows x64 Standalone (Nuitka)" --generate-notes
+          }

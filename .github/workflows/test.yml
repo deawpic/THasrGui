@@ -1,0 +1,49 @@
+name: Test Suite & Verification CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Pytest & Integrity Verification (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Astral uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Determine Application Directory
+        id: app_info
+        shell: bash
+        run: |
+          if [ -f "src/pyproject.toml" ]; then
+              echo "app_dir=src" >> "$GITHUB_OUTPUT"
+          else
+              echo "app_dir=." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Dependencies via uv
+        run: uv sync --directory "${{ steps.app_info.outputs.app_dir }}" --dev
+
+      - name: Verify Python Syntax Compilation
+        run: uv run --directory "${{ steps.app_info.outputs.app_dir }}" python -m py_compile typhoon_transcriber/main.py
+
+      - name: Run Pytest Suite
+        run: uv run --directory "${{ steps.app_info.outputs.app_dir }}" pytest tests/ -v
