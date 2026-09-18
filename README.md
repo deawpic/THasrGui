@@ -308,7 +308,7 @@ bash ../scripts/run_linux.sh
    ```
 2. **ติดตั้งแพ็กเกจ `onnxruntime-rocm` ใน Virtual Environment ของแอป (`THasrGui`):**
    ```bash
-   cd src
+   cd THasrGui
 
    # ถอนการติดตั้ง onnxruntime-gpu ตัวเดิมออกก่อน เพื่อป้องกันไลบรารีชนกัน
    uv pip uninstall onnxruntime-gpu onnxruntime
@@ -344,7 +344,7 @@ bash ../scripts/run_linux.sh
      ```
 2. **ติดตั้งแพ็กเกจ `onnxruntime-openvino` ใน Virtual Environment ของแอป (`THasrGui`):**
    ```bash
-   cd src
+   cd THasrGui
 
    # ถอนการติดตั้ง onnxruntime-gpu ตัวเดิมออกก่อน
    uv pip uninstall onnxruntime-gpu onnxruntime
