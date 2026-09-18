@@ -68,7 +68,7 @@ Built with **PySide6 (Qt for Python)**, it operates **100% offline** without hea
 | **การ์ดแสดงผล (GPU Acceleration)**<br>*(ทางเลือกสำหรับโหมด GPU)* | • **NVIDIA 2 GB VRAM** (สถาปัตยกรรม Pascal `sm_61` ขึ้นไป)<br>• การ์ดเริ่มต้น: **GeForce GTX 1050 (2GB)** / 1050 Ti<br>• หรือ AMD / Intel GPU ที่รองรับ DirectX 12 (บน Windows) | • **NVIDIA 4 GB – 8 GB VRAM ขึ้นไป** พร้อม Tensor Cores<br>• GeForce RTX 2060 / 3050 / 3060 / 4060 หรือสูงกว่า<br>• ไดรเวอร์ NVIDIA Driver 550+ |
 | **หน่วยความจำการ์ดจอ (VRAM)** | • **2 GB VRAM**<br>*(โมเดล FastConformer RNN-T ใช้ VRAM จริงเพียง ~450 MB – 600 MB)* | • **4 GB – 8 GB VRAM** ขึ้นไป |
 | **พื้นที่จัดเก็บข้อมูล (Storage)** | • **1.5 GB** พื้นที่ว่างบนฮาร์ดดิสก์ (SSD หรือ HDD)<br>*(สำหรับไฟล์โมเดล ~480 MB + Virtual Environment ~700 MB)* | • **3.0 GB** พื้นที่ว่างบน **NVMe / SATA SSD**<br>*(ช่วยให้โหลดโมเดลเข้าหน่วยความจำได้เร็วภายใน 1-2 วินาที)* |
-| **อุปกรณ์นำเข้าเสียง (Audio Input)** | • ไมโครโฟนทั่วไป (Built-in / USB 3.5mm)<br>• หรือ Virtual Loopback (Stereo Mix, Monitor of Audio) | • ไมโครโฟนแบบตัดเสียงรบกวน (Noise Cancelling) หรือ USB Audio Interface |
+| **อุปกรณ์นำเข้าเสียง (Audio Input)** | • ไมโครโฟนทั่วไป (Built-in / USB 3.5mm)<br>• **Native WASAPI Loopback** ดึงเสียงจากลำโพง/หูฟังตรงๆ บน Windows (Zero-setup ไม่ต้องพึ่ง Stereo Mix หรือโปรแกรมเสริม)<br>• PulseAudio / PipeWire Monitor (Linux) | • ไมโครโฟนแบบตัดเสียงรบกวน (Noise Cancelling) หรือ USB Audio Interface |
 | **การเชื่อมต่ออินเทอร์เน็ต** | • จำเป็นเฉพาะตอนติดตั้งครั้งแรกและดาวน์โหลดโมเดล (~480 MB) | • หลังจากดาวน์โหลดโมเดลแล้ว **ใช้งานแบบ 100% Offline ได้ตลอดชีพ** |
 
 ---

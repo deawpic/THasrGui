@@ -13,6 +13,7 @@ import numpy as np
 from ..config import SAMPLE_RATE, CHANNELS
 from .audio_processor import AudioProcessor
 from .vad import EnergyVAD
+from .device_manager import WASAPI_LOOPBACK_OFFSET
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,8 @@ class AudioCaptureEngine:
         self.dummy_mode = dummy_mode
         self.audio_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=100)
         self.stream: Optional[sd.InputStream] = None
+        self._pa_instance = None
+        self._pa_stream = None
         self.processor = AudioProcessor(sample_rate=self.sample_rate)
         self.vad = EnergyVAD()
         self.is_running = False
@@ -103,6 +106,67 @@ class AudioCaptureEngine:
             # Drop frame gracefully rather than crash if queue overflows
             pass
 
+    def _start_wasapi_loopback(self, raw_device_index: int) -> None:
+        """Start hardware WASAPI loopback audio stream using pyaudiowpatch on Windows."""
+        import pyaudiowpatch as pyaudio
+
+        self._pa_instance = pyaudio.PyAudio()
+        dev_info = self._pa_instance.get_device_info_by_index(raw_device_index)
+
+        self._hw_samplerate = int(dev_info.get("defaultSampleRate", 48000))
+        hw_channels = int(dev_info.get("maxInputChannels", 2))
+
+        def _pa_callback(in_data, frame_count, time_info, status):
+            if not self.is_running:
+                return (None, pyaudio.paAbort)
+
+            raw_chunk = np.frombuffer(in_data, dtype=np.float32)
+            if hw_channels > 1:
+                raw_chunk = raw_chunk.reshape(-1, hw_channels)
+
+            # Fast RMS calculation for UI VU meter
+            mono_raw = raw_chunk.mean(axis=1) if raw_chunk.ndim > 1 else raw_chunk.squeeze()
+            rms = float(np.sqrt(np.mean(mono_raw * mono_raw))) if mono_raw.size > 0 else 0.0
+
+            if self.on_level_callback and self.is_running:
+                level = min(rms * 10.0, 1.0)
+                try:
+                    self.on_level_callback(level)
+                except Exception:
+                    pass
+
+            if not self.is_running:
+                return (None, pyaudio.paAbort)
+
+            # Preprocess to 16kHz mono float32
+            mono_float = self.processor.process_raw(raw_chunk, int(self._hw_samplerate))
+
+            try:
+                self.audio_queue.put_nowait(mono_float)
+            except queue.Full:
+                pass
+
+            return (None, pyaudio.paContinue)
+
+        block_size = int(self._hw_samplerate * 0.1)  # 100ms blocks
+        self._pa_stream = self._pa_instance.open(
+            format=pyaudio.paFloat32,
+            channels=hw_channels,
+            rate=self._hw_samplerate,
+            input=True,
+            input_device_index=raw_device_index,
+            frames_per_buffer=block_size,
+            stream_callback=_pa_callback,
+        )
+        self._pa_stream.start_stream()
+        self.is_running = True
+        logger.info(
+            "WASAPI loopback audio stream started on raw device %d (SR: %d, Ch: %d)",
+            raw_device_index,
+            self._hw_samplerate,
+            hw_channels,
+        )
+
     def start(self, device_index: Optional[int] = None) -> None:
         """Start the audio ingestion stream."""
         with self._lock:
@@ -114,6 +178,22 @@ class AudioCaptureEngine:
             if self.dummy_mode:
                 self._start_dummy_stream()
                 return
+
+            # Check if this device is designated for Windows WASAPI Loopback
+            if self.device_index is not None and self.device_index >= WASAPI_LOOPBACK_OFFSET:
+                raw_idx = self.device_index - WASAPI_LOOPBACK_OFFSET
+                try:
+                    self._start_wasapi_loopback(raw_idx)
+                    return
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to start WASAPI loopback on device %s (raw %d): %s. Falling back to dummy stream.",
+                        self.device_index,
+                        raw_idx,
+                        exc,
+                    )
+                    self._start_dummy_stream()
+                    return
 
             try:
                 # Check if any audio input devices exist
@@ -158,7 +238,12 @@ class AudioCaptureEngine:
     def stop(self) -> None:
         """Stop audio stream safely and cleanly without crashing PortAudio/JACK."""
         with self._lock:
-            if not self.is_running and self.stream is None and self._dummy_thread is None:
+            if (
+                not self.is_running
+                and self.stream is None
+                and self._pa_stream is None
+                and self._dummy_thread is None
+            ):
                 return
 
             self.is_running = False
@@ -167,6 +252,7 @@ class AudioCaptureEngine:
                 self._dummy_thread.join(timeout=0.3)
             self._dummy_thread = None
 
+            # 1. Stop sounddevice stream if active
             stream = self.stream
             self.stream = None
 
@@ -186,6 +272,30 @@ class AudioCaptureEngine:
                         stream.close()
                 except Exception as exc:
                     logger.warning("Error closing audio stream: %s", exc)
+
+            # 2. Stop pyaudiowpatch WASAPI stream if active
+            pa_stream = self._pa_stream
+            self._pa_stream = None
+
+            if pa_stream is not None:
+                try:
+                    if pa_stream.is_active():
+                        pa_stream.stop_stream()
+                except Exception as exc:
+                    logger.warning("Error stopping WASAPI stream: %s", exc)
+
+                try:
+                    pa_stream.close()
+                except Exception as exc:
+                    logger.warning("Error closing WASAPI stream: %s", exc)
+
+            pa_inst = self._pa_instance
+            self._pa_instance = None
+            if pa_inst is not None:
+                try:
+                    pa_inst.terminate()
+                except Exception as exc:
+                    logger.warning("Error terminating PyAudio WASAPI instance: %s", exc)
 
             # Drain remaining queue
             while not self.audio_queue.empty():

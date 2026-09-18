@@ -21,6 +21,7 @@ dependencies = [
     "nvidia-curand-cu12>=10.3.0 ; sys_platform == 'linux'",
     "nvidia-cufft-cu12>=11.4.0 ; sys_platform == 'linux'",
     "onnxruntime-directml>=1.20.0 ; sys_platform == 'win32'",
+    "pyaudiowpatch>=0.2.12.8 ; sys_platform == 'win32'",
 ]
 
 [project.scripts]

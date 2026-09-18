@@ -540,7 +540,12 @@ class MainWindow(QMainWindow):
             return
 
         for dev in devices:
-            tag = " [Loopback]" if dev.is_loopback else " [Mic]"
+            if getattr(dev, "is_wasapi_loopback", False):
+                tag = " [WASAPI Loopback]"
+            elif dev.is_loopback:
+                tag = " [Loopback]"
+            else:
+                tag = " [Mic]"
             default_tag = " (Default)" if dev.is_default else ""
             display_name = f"{dev.name}{tag}{default_tag}"
             self.device_combo.addItem(display_name, dev.index)

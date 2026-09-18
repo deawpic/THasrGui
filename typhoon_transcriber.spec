@@ -66,6 +66,13 @@ hidden_imports = [
     'numpy',
 ] + collect_submodules('typhoon_transcriber')
 
+if sys.platform == 'win32':
+    try:
+        binaries += collect_dynamic_libs('pyaudiowpatch')
+    except Exception:
+        pass
+    hidden_imports += ['pyaudiowpatch', '_portaudiowpatch']
+
 # Heavy libraries strictly excluded to keep footprint light
 excludes = [
     'torch',

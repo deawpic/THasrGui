@@ -103,6 +103,20 @@ def test_audio_device_manager():
         assert isinstance(dev.index, int)
         assert isinstance(dev.name, str)
         assert dev.max_input_channels > 0
+        assert hasattr(dev, "is_wasapi_loopback")
+
+
+def test_audio_device_manager_lookup():
+    """Verify device lookup by unique index."""
+    manager = AudioDeviceManager()
+    devices = manager.refresh_devices()
+    assert manager.get_device_by_index(None) is None
+    if devices:
+        first = devices[0]
+        found = manager.get_device_by_index(first.index)
+        assert found is not None
+        assert found.index == first.index
+        assert found.name == first.name
 
 
 def test_audio_capture_engine_safe_stop():
@@ -114,7 +128,23 @@ def test_audio_capture_engine_safe_stop():
     engine.stop()
     assert not engine.is_running
     assert engine.stream is None
+    assert engine._pa_stream is None
 
     # Calling stop() multiple times consecutively must be safe and idempotent
     engine.stop()
     engine.stop()
+
+
+def test_wasapi_loopback_capture_lifecycle():
+    """Verify AudioCaptureEngine handles WASAPI loopback index routing and clean stop."""
+    from typhoon_transcriber.audio.capture_engine import AudioCaptureEngine
+    from typhoon_transcriber.audio.device_manager import WASAPI_LOOPBACK_OFFSET
+
+    # Test with dummy mode or simulated loopback device
+    engine = AudioCaptureEngine(device_index=WASAPI_LOOPBACK_OFFSET + 999, dummy_mode=True)
+    engine.start()
+    assert engine.is_running
+    engine.stop()
+    assert not engine.is_running
+    assert engine._pa_stream is None
+
