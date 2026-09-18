@@ -101,16 +101,13 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='TyphoonTranscriber',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,  # Keep false to prevent PySide6 DLL corruption
-    runtime_tmpdir=None,
     console=False,  # Windowed GUI app
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -118,3 +115,15 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='TyphoonTranscriber',
+)
+

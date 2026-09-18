@@ -1,4 +1,4 @@
-name: Release Windows Standalone (Nuitka)
+name: Release Windows Standalone (PyInstaller onedir)
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build TyphoonTranscriber (Windows x64 Nuitka Standalone)
+    name: Build TyphoonTranscriber (Windows x64 PyInstaller onedir)
     runs-on: windows-latest
 
     steps:
@@ -29,9 +29,6 @@ jobs:
       - name: Set up Python 3.11
         run: uv python install 3.11
 
-      - name: Set up MSVC Compiler
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Determine Application Directory
         id: app_info
         shell: pwsh
@@ -39,23 +36,12 @@ jobs:
           if (Test-Path "src/pyproject.toml") {
               Write-Host "Detected application in src/ directory"
               "app_dir=src" >> $env:GITHUB_OUTPUT
-              "lock_file=src/uv.lock" >> $env:GITHUB_OUTPUT
+              "spec_file=src/typhoon_transcriber.spec" >> $env:GITHUB_OUTPUT
           } else {
               Write-Host "Detected application in repository root"
               "app_dir=." >> $env:GITHUB_OUTPUT
-              "lock_file=uv.lock" >> $env:GITHUB_OUTPUT
+              "spec_file=typhoon_transcriber.spec" >> $env:GITHUB_OUTPUT
           }
-
-      - name: Cache Nuitka Compilation Caches
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~\AppData\Local\Nuitka\Nuitka\Cache
-            ~/.cache/Nuitka
-          key: nuitka-cache-windows-${{ hashFiles(steps.app_info.outputs.lock_file) }}-${{ github.run_id }}
-          restore-keys: |
-            nuitka-cache-windows-${{ hashFiles(steps.app_info.outputs.lock_file) }}-
-            nuitka-cache-windows-
 
       - name: Install Dependencies via uv
         shell: pwsh
@@ -71,28 +57,16 @@ jobs:
           Write-Host "Running pytest verification before compiling in $appDir..."
           uv run --directory $appDir pytest tests/ -v
 
-      - name: Build Standalone Directory with Nuitka
+      - name: Build Standalone onedir with PyInstaller
         shell: pwsh
         run: |
           $appDir = "${{ steps.app_info.outputs.app_dir }}"
-          Write-Host "Packaging standalone onedir application with Nuitka in $appDir..."
-          uv run --directory $appDir nuitka `
-            --standalone `
-            --enable-plugins=pyside6 `
-            --windows-console-mode=disable `
-            --output-dir=dist `
-            --output-folder-name=TyphoonTranscriber `
-            --output-filename=TyphoonTranscriber.exe `
-            --follow-import-to=typhoon_transcriber `
-            --include-package-data=_sounddevice_data `
-            --include-package-data=_soundfile_data `
-            --include-package-data=sentencepiece `
-            --include-package-data=onnxruntime `
-            --nofollow-import-to=torch,torchaudio,nemo,tkinter,matplotlib,scipy,IPython,jupyter,notebook `
-            typhoon_transcriber/main.py
+          $specFile = "${{ steps.app_info.outputs.spec_file }}"
+          Write-Host "Packaging standalone onedir application with PyInstaller ($specFile)..."
+          uv run --directory $appDir pyinstaller $specFile --clean --noconfirm
 
           if ($LASTEXITCODE -ne 0) {
-              Write-Error "CRITICAL: Nuitka compilation failed with exit code $LASTEXITCODE"
+              Write-Error "CRITICAL: PyInstaller build failed with exit code $LASTEXITCODE"
               exit $LASTEXITCODE
           }
 
@@ -100,28 +74,21 @@ jobs:
         shell: pwsh
         run: |
           $appDir = "${{ steps.app_info.outputs.app_dir }}"
-          $distBaseDir = Join-Path $appDir "dist"
+          $distDir = Join-Path $appDir "dist"
+          $onedirFolder = Join-Path $distDir "TyphoonTranscriber"
 
-          if (-not (Test-Path $distBaseDir)) {
-              Write-Error "CRITICAL: Build directory '$distBaseDir' does not exist. Nuitka compilation may have failed."
+          if (-not (Test-Path $onedirFolder)) {
+              Write-Error "CRITICAL: PyInstaller onedir folder '$onedirFolder' was not created!"
               exit 1
           }
 
-          # Locate Nuitka standalone output directory (e.g. dist/TyphoonTranscriber.dist or dist/TyphoonTranscriber)
-          $nuitkaDir = Get-ChildItem -Path $distBaseDir -Directory | Where-Object { $_.Name -like "*TyphoonTranscriber*" } | Select-Object -First 1
-
-          if ($null -eq $nuitkaDir -or -not (Test-Path $nuitkaDir.FullName)) {
-              Write-Error "CRITICAL: Nuitka standalone directory was not found in $distBaseDir!"
-              exit 1
-          }
-
-          $exePath = Join-Path $nuitkaDir.FullName "TyphoonTranscriber.exe"
+          $exePath = Join-Path $onedirFolder "TyphoonTranscriber.exe"
           if (-not (Test-Path $exePath)) {
-              Write-Error "CRITICAL: TyphoonTranscriber.exe was not found inside $($nuitkaDir.FullName)!"
+              Write-Error "CRITICAL: TyphoonTranscriber.exe was not found inside '$onedirFolder'!"
               exit 1
           }
 
-          Write-Host "SUCCESS: Found Nuitka standalone folder at: $($nuitkaDir.FullName)"
+          Write-Host "SUCCESS: Found PyInstaller onedir folder at: $onedirFolder"
           Write-Host "SUCCESS: Found executable at: $exePath"
 
           $releaseDir = "TyphoonTranscriber-Windows-x64"
@@ -129,8 +96,8 @@ jobs:
               Remove-Item -Recurse -Force $releaseDir
           }
 
-          # Copy entire standalone directory contents into release distribution folder
-          Copy-Item -Path "$($nuitkaDir.FullName)\*" -Destination $releaseDir -Recurse -Force
+          # Copy entire standalone onedir directory contents into release distribution folder
+          Copy-Item -Path "$onedirFolder\*" -Destination $releaseDir -Recurse -Force
 
           # Include documentation if available
           if (Test-Path "$appDir/README.md") {
@@ -181,5 +148,5 @@ jobs:
           Write-Host "Publishing GitHub Release for $tagName ($zipPath) via gh CLI..."
           gh release upload $tagName $zipPath --clobber 2>$null
           if ($LASTEXITCODE -ne 0) {
-              gh release create $tagName $zipPath --title "$tagName - Windows x64 Standalone (Nuitka)" --generate-notes
+              gh release create $tagName $zipPath --title "$tagName - Windows x64 Standalone (PyInstaller onedir)" --generate-notes
           }
