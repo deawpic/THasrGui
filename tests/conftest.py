@@ -3,6 +3,11 @@ Pytest configuration and global fixtures for Typhoon ASR test suite.
 Ensures session cache isolation across tests.
 """
 
+import os
+
+# Ensure headless Qt environment for CI and server runs
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 import pytest
 from pathlib import Path
 from typhoon_transcriber.config import LAST_SESSION_QUEUE_FILE

@@ -16,9 +16,30 @@ jobs:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
 
+    env:
+      QT_QPA_PLATFORM: offscreen
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Install Linux System Dependencies for PySide6 & Audio
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libgl1 \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            libxkbcommon0 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-keysyms1 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            libportaudio2
 
       - name: Set up Astral uv
         uses: astral-sh/setup-uv@v5

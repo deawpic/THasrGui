@@ -69,3 +69,20 @@ def test_nuitka_plugins_and_module_resolution():
     assert nuitka.Version.getNuitkaVersion() is not None
     assert "pyside6" in getQtPluginNames()
     assert hasPluginName("pyside6") is True
+
+
+def test_package_init_lazy_main():
+    """Verify importing typhoon_transcriber does not eagerly load main or PySide6 GUI module."""
+    cmd = [
+        sys.executable,
+        "-c",
+        "import sys; import typhoon_transcriber.config; "
+        "assert 'typhoon_transcriber.main' not in sys.modules, 'main eagerly imported!'; "
+        "import typhoon_transcriber; "
+        "assert callable(typhoon_transcriber.main); "
+        "print('LAZY_OK')",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, f"Failed with: {result.stderr}"
+    assert "LAZY_OK" in result.stdout
+
