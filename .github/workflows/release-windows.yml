@@ -96,8 +96,23 @@ jobs:
               Remove-Item -Recurse -Force $releaseDir
           }
 
-          # Copy entire standalone onedir directory contents into release distribution folder
-          Copy-Item -Path "$onedirFolder\*" -Destination $releaseDir -Recurse -Force
+          # Copy entire standalone onedir directory directly to preserve _internal/ and directory tree
+          Copy-Item -Path $onedirFolder -Destination $releaseDir -Recurse -Force
+
+          # Verify critical _internal directory is preserved
+          $internalDir = Join-Path $releaseDir "_internal"
+          if (-not (Test-Path $internalDir)) {
+              Write-Error "CRITICAL: '_internal' directory was not found in $releaseDir!"
+              exit 1
+          }
+
+          # Verify python runtime DLL is inside _internal
+          $pythonDll = Get-ChildItem -Path $internalDir -Filter "python*.dll" | Select-Object -First 1
+          if ($null -eq $pythonDll) {
+              Write-Error "CRITICAL: python*.dll was not found inside '$internalDir'!"
+              exit 1
+          }
+          Write-Host "SUCCESS: Verified python DLL at: $($pythonDll.FullName)"
 
           # Include documentation if available
           if (Test-Path "$appDir/README.md") {
