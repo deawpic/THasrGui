@@ -59,3 +59,13 @@ def test_pyinstaller_submodules_collection():
     assert "typhoon_transcriber.ui.widgets.download_dialog" in submodules
     assert "typhoon_transcriber.ui.widgets.batch_dialog" in submodules
     assert "typhoon_transcriber.ui.widgets.post_processing_dialog" in submodules
+
+
+def test_nuitka_plugins_and_module_resolution():
+    """Verify Nuitka is available with PySide6 plugin support for standalone builds."""
+    import nuitka.Version
+    from nuitka.plugins.Plugins import getQtPluginNames, hasPluginName
+
+    assert nuitka.Version.getNuitkaVersion() is not None
+    assert "pyside6" in getQtPluginNames()
+    assert hasPluginName("pyside6") is True

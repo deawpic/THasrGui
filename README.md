@@ -18,6 +18,8 @@ Built with **PySide6 (Qt for Python)**, it operates **100% offline** without hea
    - [2.2 รายละเอียดฮาร์ดแวร์ที่รองรับ (Hardware Compatibility Breakdown)](#22-รายละเอียดฮาร์ดแวร์ที่รองรับ-hardware-compatibility-breakdown)
 3. [🛠️ สิ่งที่ต้องเตรียมก่อนใช้งานใน Linux & โปรแกรมเสริม (System Prerequisites)](#️-prerequisites-สิ่งที่ต้องเตรียมใน-linux--โปรแกรมเสริม)
 4. [🚀 วิธีติดตั้ง Virtual Environment และการใช้งาน (Installation via uv)](#-installation--virtual-environment-วิธีสร้าง-venv)
+   - [4.1 🪟 ขั้นตอนการติดตั้งและรันบน Windows (PowerShell / Command Prompt)](#41--ขั้นตอนการติดตั้งและรันบน-windows-powershell--command-prompt)
+   - [4.2 🐧 ขั้นตอนการติดตั้งและรันบน Linux](#42--ขั้นตอนการติดตั้งและรันบน-linux)
 5. [⚡ คำแนะนำการเลือกฮาร์ดแวร์ประมวลผล (Hardware Selection: CPU vs GPU รุ่นต่างๆ)](#-hardware-selection-คำแนะนำการเลือกใช้-cpu-vs-gpu-รุ่นต่างๆ)
    - [5.1 โหมด CPU (สำหรับคอมพิวเตอร์ทั่วไป / ประหยัด RAM)](#51-โหมด-cpu-สำหรับคอมพิวเตอร์ทั่วไป--ประหยัด-ram-500-mb)
    - [5.2 โหมด GPU สำหรับ NVIDIA Pascal (GTX 1050, 1060, 1070, 1080)](#52-โหมด-gpu-สำหรับ-nvidia-pascal-gtx-1050-1060-1070-1080--sm_61)
@@ -139,33 +141,102 @@ Built with **PySide6 (Qt for Python)**, it operates **100% offline** without hea
 
 ## 🚀 Installation & Virtual Environment (วิธีสร้าง venv)
 
-### 1. Clone Source Code
+### 4.1 🪟 ขั้นตอนการติดตั้งและรันบน Windows (PowerShell / Command Prompt)
+
+สำหรับผู้ใช้งาน Windows สามารถติดตั้งและเปิดใช้งานโปรแกรมตั้งแต่เริ่มต้นจนถึงการรันได้ตามขั้นตอนดังนี้:
+
+#### 1. ติดตั้ง `uv` (Fast Python Package Manager)
+เปิด **PowerShell** (โหมดปกติ ไม่จำเป็นต้อง Run as Administrator) แล้วรันคำสั่ง:
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+*(หรือหากใช้ Windows Package Manager: `winget install --id=astral-sh.uv -e`)*
+
+> [!NOTE]
+> หลังจากติดตั้ง `uv` เสร็จเรียบร้อยแล้ว ให้ **ปิดหน้าต่าง PowerShell แล้วเปิดใหม่** เพื่อให้คำสั่ง `uv` พร้อมใช้งานในระบบ
+
+#### 2. Clone Source Code และเข้าสู่โฟลเดอร์โปรเจกต์
+```powershell
+git clone https://github.com/deawpic/THasrGui.git
+cd THasrGui
+```
+
+#### 3. ติดตั้ง Python 3.11 และสร้าง Virtual Environment (`.venv`) ด้วย `uv`
+โปรเจกต์นี้ตรึงการใช้งานไว้ที่ **Python 3.11** เพื่อความเข้ากันได้สมบูรณ์กับ ONNX Runtime และ PySide6:
+```powershell
+# 1. ให้ uv ดาวน์โหลดและติดตั้ง Python 3.11 ลงในเครื่องอัตโนมัติ (ไม่ต้องติดตั้ง Python แยกจากเว็บภายนอก)
+uv python install 3.11
+
+# 2. สร้างโฟลเดอร์ Virtual Environment (.venv) ที่ใช้ Python 3.11
+uv venv --python 3.11
+```
+
+#### 4. สั่ง Activate Virtual Environment (ทางเลือก)
+* **บน PowerShell:**
+  ```powershell
+  .venv\Scripts\Activate.ps1
+  ```
+  *(หากพบข้อผิดพลาด Script Execution Policy ให้รันคำสั่ง: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` ก่อนสั่ง activate)*
+* **บน Command Prompt (cmd.exe):**
+  ```cmd
+  .venv\Scripts\activate.bat
+  ```
+
+#### 5. ซิงค์และติดตั้ง Dependencies ทั้งหมดด้วย `uv sync`
+รันคำสั่งเพื่อติดตั้งแพ็กเกจทั้งหมดตามไฟล์ `uv.lock` อย่างแม่นยำ:
+```powershell
+uv sync
+```
+*(บน Windows ตัว `uv` จะเลือกติดตั้ง `onnxruntime-directml` ให้อัตโนมัติ เพื่อรองรับการเร่งความเร็วด้วยการ์ดจอ AMD, Intel Arc, และ NVIDIA ผ่าน DirectX 12)*
+
+#### 6. เปิดใช้งานโปรแกรมด้วย `uv run`
+สามารถสั่งรันโปรแกรมได้ทันที (ข้อดีของ `uv run` คือสามารถสั่งรันได้เลยโดยไม่จำเป็นต้องพิมพ์ activate `.venv` ล่วงหน้า):
+```powershell
+# วิธีที่ 1: รันผ่าน Entry Point ของแอปพลิเคชัน
+uv run typhoon-transcriber
+
+# วิธีที่ 2: รันผ่าน Python Module
+uv run python -m typhoon_transcriber
+```
+
+---
+
+### 4.2 🐧 ขั้นตอนการติดตั้งและรันบน Linux
+
+#### 1. ติดตั้ง `uv` และ System Libraries
+```bash
+# ติดตั้ง PortAudio และ FFmpeg (ตัวอย่างสำหรับ Ubuntu/Debian)
+sudo apt update && sudo apt install -y libportaudio2 ffmpeg
+
+# ติดตั้ง uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.bashrc
+```
+
+#### 2. Clone Source Code และเข้าสู่โฟลเดอร์ 
 ```bash
 git clone https://github.com/deawpic/THasrGui.git
 cd THasrGui
 ```
 
-### 2. สร้าง Virtual Environment ด้วย Python 3.11
-โปรเจกต์นี้กำหนดให้ใช้ **Python 3.11** เพื่อความเข้ากันได้ 100% กับทั้ง ONNX Runtime, CUDA, และ Qt 6:
-
+#### 3. สร้าง Virtual Environment ด้วย Python 3.11
 ```bash
-# 1. ให้ uv ติดตั้ง Python 3.11 ลงในระบบอัตโนมัติ (หากยังไม่มี)
+# 1. ให้ uv ติดตั้ง Python 3.11 อัตโนมัติ
 uv python install 3.11
 
-# 2. สร้างโฟลเดอร์ Virtual Environment (.venv) ที่เจาะจง Python 3.11
+# 2. สร้าง Virtual Environment (.venv)
 uv venv --python 3.11
 
 # 3. สั่ง Activate Virtual Environment
 source .venv/bin/activate
 ```
 
-### 3. ซิงค์และติดตั้ง Dependencies ทั้งหมด
-รันคำสั่งเดียวเพื่อให้ `uv` ติดตั้งทุกแพ็กเกจตามไฟล์ `uv.lock` อย่างแม่นยำ:
+#### 4. ซิงค์และติดตั้ง Dependencies
 ```bash
 uv sync
 ```
 
-### 4. เปิดใช้งานโปรแกรม
+#### 5. เปิดใช้งานโปรแกรม
 ```bash
 # รันผ่าน Entry Point ของแอปพลิเคชัน
 uv run typhoon-transcriber
@@ -235,7 +306,7 @@ bash ../scripts/run_linux.sh
    sudo apt update
    sudo apt install -y rocm-hip-sdk
    ```
-2. **ติดตั้งแพ็กเกจ `onnxruntime-rocm` ใน Virtual Environment ของแอป (`src/`):**
+2. **ติดตั้งแพ็กเกจ `onnxruntime-rocm` ใน Virtual Environment ของแอป (`THasrGui`):**
    ```bash
    cd src
 
@@ -271,7 +342,7 @@ bash ../scripts/run_linux.sh
      sudo pacman -S --needed intel-compute-runtime level-zero-loader
      sudo usermod -aG render,video $USER
      ```
-2. **ติดตั้งแพ็กเกจ `onnxruntime-openvino` ใน Virtual Environment ของแอป (`src/`):**
+2. **ติดตั้งแพ็กเกจ `onnxruntime-openvino` ใน Virtual Environment ของแอป (`THasrGui`):**
    ```bash
    cd src
 
@@ -364,7 +435,7 @@ curl -L -o models/decoder_joint-fastconformer-quran-ar.onnx \
 คุณสามารถเลือกวางไฟล์ได้ 2 รูปแบบตามความสะดวก โดยระบบจะค้นหาและตรวจจับให้อัตโนมัติ:
 
 #### รูปแบบที่ 1: วางไว้ในโฟลเดอร์ `models/` ภายในแอป (แนะนำ — เป็นระเบียบเรียบร้อย)
-สร้างโฟลเดอร์ชื่อ `models` ไว้ในโฟลเดอร์แอป (`src/` หรือโฟลเดอร์ Portable Bundle):
+สร้างโฟลเดอร์ชื่อ `models` ไว้ในโฟลเดอร์แอป (`THasrGui` หรือโฟลเดอร์ Portable Bundle):
 ```text
 TyphoonTranscriber-Portable/
 ├── pyproject.toml
@@ -401,7 +472,7 @@ TyphoonTranscriber-Portable/
 | :---: | :--- | :--- |
 | **1** | **`$TYPHOON_MODEL_DIR`** | กำหนด Path ของโมเดลเองผ่าน Environment Variable เช่น ใน Server, Docker หรือแชร์โมเดลร่วมกันในระบบ |
 | **2** | **`<Executable_Dir>/models/` และ `<Executable_Dir>/`** | สำหรับ **Portable App** เมื่อ build เป็น standalone binary หรือ PyInstaller `.exe` (วางไฟล์ไว้ข้าง `.exe` ได้ทันที) |
-| **3** | **`<App_Root>/models/` และ `<App_Root>/`** | สำหรับ Source Code / Portable Folder (เช่น โฟลเดอร์ `src/models/` หรือ `src/`) |
+| **3** | **`<App_Root>/models/` และ `<App_Root>/`** | สำหรับ Source Code / Portable Folder (เช่น โฟลเดอร์ `THasrGui/models/` หรือ `THasrGui`) |
 | **4** | **`<Package_Dir>/models/` และ `<Package_Dir>/`** | โฟลเดอร์แพ็กเกจ `typhoon_transcriber/` |
 | **5** | **`./models/`, `./assets/`, และ `./`** | โฟลเดอร์ปัจจุบันที่เปิดเทอร์มินัลรันคำสั่ง (Current Working Directory) |
 | **6** | **`~/.cache/typhoon-asr/` (หรือ `$TYPHOON_CACHE_DIR`)** | โฟลเดอร์ Default Cache ประจำเครื่องของผู้ใช้ (ตำแหน่งที่ปุ่ม Auto-Downloader บันทึกไฟล์ลงมา) |
@@ -569,7 +640,7 @@ Test coverage includes:
 ## 📁 Repository Structure
 
 ```text
-src/
+THasrGui
 ├── pyproject.toml                     # Project dependencies & packaging config
 ├── uv.lock                            # Deterministic package lockfile
 ├── .python-version                    # Pinned Python 3.11 runtime

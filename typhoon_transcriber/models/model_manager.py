@@ -69,8 +69,14 @@ class ModelManager:
         if env_model_dir:
             _add_if_valid(Path(env_model_dir).expanduser())
 
-        # 2. Frozen executable / Portable directory (PyInstaller portable .exe or binary)
-        if getattr(sys, "frozen", False):
+        # 2. Standalone / Frozen executable directory (Nuitka standalone or PyInstaller)
+        is_standalone = (
+            getattr(sys, "frozen", False)
+            or "__compiled__" in globals()
+            or hasattr(sys, "__compiled__")
+            or "nuitka" in sys.modules
+        )
+        if is_standalone:
             exe_dir = Path(sys.executable).parent
             _add_if_valid(exe_dir / "models")
             _add_if_valid(exe_dir)

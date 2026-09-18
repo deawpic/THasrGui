@@ -37,8 +37,11 @@ include = ["typhoon_transcriber*"]
 
 [dependency-groups]
 dev = [
+    "nuitka>=4.2.1",
+    "ordered-set>=4.1.0",
     "psutil>=7.2.2",
     "pyinstaller>=6.22.3",
     "pytest>=9.1.1",
     "pytest-qt>=4.5.0",
+    "zstandard>=0.25.0",
 ]
