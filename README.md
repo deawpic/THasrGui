@@ -21,10 +21,12 @@ Built with **PySide6 (Qt for Python)**, it operates **100% offline** without hea
    - [4.1 🪟 ขั้นตอนการติดตั้งและรันบน Windows (PowerShell / Command Prompt)](#41--ขั้นตอนการติดตั้งและรันบน-windows-powershell--command-prompt)
    - [4.2 🐧 ขั้นตอนการติดตั้งและรันบน Linux](#42--ขั้นตอนการติดตั้งและรันบน-linux)
 5. [⚡ คำแนะนำการเลือกฮาร์ดแวร์ประมวลผล (Hardware Selection: CPU vs GPU รุ่นต่างๆ)](#-hardware-selection-คำแนะนำการเลือกใช้-cpu-vs-gpu-รุ่นต่างๆ)
-   - [5.1 โหมด CPU (สำหรับคอมพิวเตอร์ทั่วไป / ประหยัด RAM)](#51-โหมด-cpu-สำหรับคอมพิวเตอร์ทั่วไป--ประหยัด-ram-500-mb)
-   - [5.2 โหมด GPU สำหรับ NVIDIA Pascal (GTX 1050, 1060, 1070, 1080)](#52-โหมด-gpu-สำหรับ-nvidia-pascal-gtx-1050-1060-1070-1080--sm_61)
-   - [5.3 โหมด GPU สำหรับ NVIDIA รุ่นใหม่ (RTX 20xx, 30xx, 40xx, 50xx)](#53-โหมด-gpu-สำหรับ-nvidia-รุ่นใหม่-rtx-20xx-30xx-40xx-50xx--sm_75-sm_86-sm_89-sm_120)
-   - [5.4 โหมด GPU สำหรับ AMD Radeon & Intel Arc](#54-โหมด-gpu-สำหรับ-amd-radeon--intel-arc-windows-directml--linux)
+   - [5.1 แผนผังการทำงานและการสลับฮาร์ดแวร์ (Hardware & Execution Provider Flowchart)](#51-แผนผังการทำงานและการสลับฮาร์ดแวร์-hardware--execution-provider-flowchart)
+   - [5.2 โหมด CPU (สำหรับคอมพิวเตอร์ทั่วไป / ประหยัด RAM)](#52-โหมด-cpu-สำหรับคอมพิวเตอร์ทั่วไป--ประหยัด-ram-500-mb)
+   - [5.3 โหมด GPU สำหรับ NVIDIA Pascal (GTX 1050, 1060, 1070, 1080)](#53-โหมด-gpu-สำหรับ-nvidia-pascal-gtx-1050-1060-1070-1080--sm_61)
+   - [5.4 โหมด GPU สำหรับ NVIDIA รุ่นใหม่ (RTX 20xx, 30xx, 40xx, 50xx)](#54-โหมด-gpu-สำหรับ-nvidia-รุ่นใหม่-rtx-20xx-30xx-40xx-50xx--sm_75-sm_86-sm_89-sm_120)
+   - [5.5 โหมด GPU สำหรับ AMD Radeon & Intel Arc](#55-โหมด-gpu-สำหรับ-amd-radeon--intel-arc-windows-directml--linux)
+   - [5.6 ผลการทดสอบเชิงประจักษ์และการวิเคราะห์ประสิทธิภาพ (Empirical Benchmark: Linux CUDA vs Windows DirectML vs CPU)](#56-ผลการทดสอบเชิงประจักษ์และการวิเคราะห์ประสิทธิภาพ-empirical-benchmark-linux-cuda-vs-windows-directml-vs-cpu)
 6. [📥 ระบบตรวจสอบและดาวน์โหลดโมเดลอัตโนมัติ (Automated Model Setup)](#-automated-model-setup-ระบบตรวจสอบและดาวน์โหลดโมเดลอัตโนมัติ)
 7. [💼 วิธีจัดทำ Portable App (Copy ไฟล์โมเดลไว้ในโฟลเดอร์เดียวกับแอป)](#-วิธีจัดทำ-portable-app-copy-ไฟล์โมเดลไว้ในโฟลเดอร์เดียวกับแอป)
 8. [🔎 ลำดับ Model Search Path (การค้นหาโมเดลของระบบ)](#-ลำดับ-model-search-path-การค้นหาโมเดลของระบบ)
@@ -87,9 +89,9 @@ Built with **PySide6 (Qt for Python)**, it operates **100% offline** without hea
 | **NVIDIA Ampere** | RTX 3050, 3060, 3070, 3080, 3090, A100, RTX A-Series | `sm_80`, `sm_86` | 4 GB | ✅ **รองรับสมบูรณ์ + Tensor Cores** (CUDA 12) |
 | **NVIDIA Ada Lovelace** | RTX 4050, 4060, 4070, 4080, 4090, RTX 4000 Ada | `sm_89` | 6 GB | ✅ **รองรับสมบูรณ์ + 4th Gen Tensor Cores** (CUDA 12) |
 | **NVIDIA Blackwell** | RTX 50 Series (RTX 5070, 5080, 5090), B200 | `sm_120`, `sm_100` | 8 GB | ✅ **รองรับ** (ผ่าน Forward PTX JIT บน CUDA 12) |
-| **AMD Radeon (Windows)** | RX 5000, RX 6000, RX 7000 Series, Radeon Vega | DirectX 12 | 4 GB | ✅ **รองรับสมบูรณ์** (ผ่าน `DirectMLExecutionProvider`) |
+| **AMD Radeon (Windows)** | RX 5000, RX 6000, RX 7000 Series, Radeon Vega | DirectX 12 | 4 GB | ✅ **รองรับสมบูรณ์** (ผ่าน `DmlExecutionProvider` / DirectML) |
 | **AMD Radeon (Linux)** | RX 6000, RX 7000 Series | ROCm | 8 GB | ⚙️ รองรับผ่าน `onnxruntime-rocm` (หรือ Fallback รัน CPU ปลอดภัย) |
-| **Intel Arc / Iris (Windows)** | Intel Arc A380, A580, A750, A770, Iris Xe Graphics | DirectX 12 | 4 GB | ✅ **รองรับสมบูรณ์** (ผ่าน `DirectMLExecutionProvider`) |
+| **Intel Arc / Iris (Windows)** | Intel Arc A380, A580, A750, A770, Iris Xe Graphics | DirectX 12 | 4 GB | ✅ **รองรับสมบูรณ์** (ผ่าน `DmlExecutionProvider` / DirectML) |
 | **Intel Arc (Linux)** | Intel Arc A-Series | OpenVINO | 4 GB | ⚙️ รองรับผ่าน `onnxruntime-openvino` (หรือ Fallback รัน CPU ปลอดภัย) |
 
 > [!TIP]
@@ -251,14 +253,52 @@ bash ../scripts/run_linux.sh
 
 โปรแกรมมีเมนู **⚡ Hardware / การประมวลผล** บนแถบด้านบนของหน้าจอให้เลือกสลับระหว่าง **🖥️ CPU** และ **⚡ GPU (Auto-Detect)** ได้ทันที:
 
-### 5.1 โหมด CPU (สำหรับคอมพิวเตอร์ทั่วไป / ประหยัด RAM < 500 MB)
+### 5.1 แผนผังการทำงานและการสลับฮาร์ดแวร์ (Hardware & Execution Provider Flowchart)
+
+```mermaid
+flowchart TD
+    Start["ผู้ใช้งานเลือกโหมดประมวลผล<br>(⚡ GPU หรือ 🖥️ CPU)"] --> CheckMode{"โหมดที่เลือก?"}
+    
+    %% โหมด CPU
+    CheckMode -->|"🖥️ CPU"| CPU_Mode["CPUExecutionProvider<br>(Intra-op: 2 | Inter-op: 1)"]
+    CPU_Mode --> Run_CPU["✅ ประมวลผลบน CPU สำเร็จ<br>(RAM &lt; 250 MB | Status: 'Running on CPU')"]
+
+    %% โหมด GPU
+    CheckMode -->|"⚡ GPU"| Detect_OS{"ตรวจจับ OS<br>(sys.platform)"}
+
+    %% Windows Branch
+    Detect_OS -->|"🪟 Windows"| Win_Providers["ค้นหา Execution Providers:<br>1. CUDAExecutionProvider (ถ้ามี)<br>2. DmlExecutionProvider (DirectML)<br>3. CPUExecutionProvider"]
+    Win_Providers --> Win_DML{"DirectX 12 พร้อมใช้งาน?"}
+    Win_DML -->|"✅ พร้อม"| Win_GPU_Run["ประมวลผลผ่าน DirectML (DirectX 12)<br>🟢 NVIDIA: GTX 1050 / 16xx / RTX<br>🔴 AMD: RX 5000-8000 / Radeon iGPU<br>🔵 Intel: Arc / Iris Xe / Core Ultra"]
+    Win_GPU_Run --> Win_Success["✅ Status: 'Running on DirectML' หรือ 'Running on CUDA'"]
+
+    %% Linux Branch
+    Detect_OS -->|"🐧 Linux"| Lin_Providers["ค้นหา Execution Providers:<br>1. CUDAExecutionProvider<br>2. ROCmExecutionProvider<br>3. OpenVINOExecutionProvider<br>4. CPUExecutionProvider"]
+    Lin_Providers --> Lin_Check{"Driver ค่ายใดพร้อมใช้งาน?"}
+    Lin_Check -->|"🟢 NVIDIA"| Lin_CUDA["CUDA 12 + cuDNN 9.10<br>(Auto-Preload libcudart/libcublas)"]
+    Lin_Check -->|"🔴 AMD"| Lin_ROCm["ROCm HIP SDK<br>(onnxruntime-rocm)"]
+    Lin_Check -->|"🔵 Intel"| Lin_OpenVINO["Intel OpenVINO Toolkit<br>(onnxruntime-openvino)"]
+    
+    Lin_CUDA --> Lin_Success_CUDA["✅ Status: 'Running on CUDA'"]
+    Lin_ROCm --> Lin_Success_ROCm["✅ Status: 'Running on ROCm'"]
+    Lin_OpenVINO --> Lin_Success_OpenVINO["✅ Status: 'Running on OpenVINO'"]
+
+    %% Fallback Branch
+    Win_DML -->|"❌ Driver ไม่พบ / แครช"| Fallback["⚠️ Automatic Fallback Engine<br>(สลับใช้ CPU ป้องกันแอปพลิเคชันแครช)"]
+    Lin_Check -->|"❌ ไร้ Driver GPU"| Fallback
+    Fallback --> CPU_Mode
+```
+
+---
+
+### 5.2 โหมด CPU (สำหรับคอมพิวเตอร์ทั่วไป / ประหยัด RAM < 500 MB)
 * **ความเหมาะสม:** คอมพิวเตอร์สำนักงานทั่วไป โน้ตบุ๊ก หรือเครื่องที่ไม่มีการ์ดจอแยก NVIDIA
 * **ประสิทธิภาพ:** ตัวโมเดล FastConformer RNN-T ถูกปรับแต่งมาอย่างดี ใช้หน่วยความจำ RAM เพียง ~140 MB – 250 MB และใช้ CPU เพียง 2 Cores ก็สามารถถอดเสียงแบบเรียลไทม์ได้ลื่นไหล
 * **การติดตั้ง:** เพียงรัน `uv sync` ก็พร้อมใช้งานได้ทันทีโดยไม่ต้องตั้งค่าไดรเวอร์ใดๆ เพิ่มเติม
 
 ---
 
-### 5.2 โหมด GPU สำหรับ NVIDIA Pascal (GTX 1050, 1060, 1070, 1080 — `sm_61`)
+### 5.3 โหมด GPU สำหรับ NVIDIA Pascal (GTX 1050, 1060, 1070, 1080 — `sm_61`)
 * **ปัญหาทางเทคนิคของการ์ดตระกูล Pascal:** การ์ดจอรุ่น GTX 10xx ใช้สถาปัตยกรรม Pascal (`sm_61`) ซึ่งไลบรารี cuDNN เวอร์ชัน 9.11 ขึ้นไปได้ยกเลิกการรองรับ Convolution Frontend Graph ไปแล้ว ส่งผลให้เกิดข้อผิดพลาด `CUDNN_FE failure 11: CUDNN_BACKEND_API_FAILED`
 * **การแก้ปัญหาที่โปรเจกต์นี้กำหนดไว้ให้เรียบร้อยแล้ว:**
   1. ตรึงแพ็กเกจเป็น `onnxruntime-gpu==1.22.0` (คอมไพล์สำหรับ CUDA 12)
@@ -273,7 +313,7 @@ bash ../scripts/run_linux.sh
 
 ---
 
-### 5.3 โหมด GPU สำหรับ NVIDIA รุ่นใหม่ (RTX 20xx, 30xx, 40xx, 50xx — `sm_75`, `sm_86`, `sm_89`, `sm_120`)
+### 5.4 โหมด GPU สำหรับ NVIDIA รุ่นใหม่ (RTX 20xx, 30xx, 40xx, 50xx — `sm_75`, `sm_86`, `sm_89`, `sm_120`)
 * **ความเหมาะสม:** การ์ดจอ NVIDIA รุ่นใหม่ เช่น:
   - **Turing (`sm_75`):** RTX 2060, 2070, 2080, GTX 1660 Ti
   - **Ampere (`sm_86`, `sm_80`):** RTX 3050, 3060, 3070, 3080, 3090, A100
@@ -285,10 +325,10 @@ bash ../scripts/run_linux.sh
 
 ---
 
-### 5.4 โหมด GPU สำหรับ AMD Radeon & Intel Arc (Windows DirectML & Linux)
+### 5.5 โหมด GPU สำหรับ AMD Radeon & Intel Arc (Windows DirectML & Linux)
 
 #### 🪟 การใช้งานบน Windows (DirectML — Zero Config)
-* ระบบจะตรวจจับและเลือกใช้ **`DirectMLExecutionProvider`** ผ่าน DirectX 12 ให้อัตโนมัติ รองรับทั้ง AMD Radeon (RX 5000 / 6000 / 7000) และ Intel Arc (A380 / A580 / A750 / A770) โดยไม่ต้องติดตั้งไดรเวอร์ AI พิเศษเพิ่มเติม
+* ระบบจะตรวจจับและเลือกใช้ **`DmlExecutionProvider`** ผ่าน DirectX 12 ให้อัตโนมัติ รองรับทั้ง AMD Radeon (RX 5000 / 6000 / 7000 / 8000), Intel Arc (A380 / A580 / A750 / A770 / Battlemage) และ NVIDIA (GTX 1050 ขึ้นไป) โดยไม่ต้องติดตั้งไดรเวอร์ AI พิเศษเพิ่มเติม
 
 ---
 
@@ -360,6 +400,35 @@ bash ../scripts/run_linux.sh
 
 > [!TIP]
 > **หากไม่ต้องการลงไดรเวอร์เสริมบน Linux:** หากคุณใช้การ์ดจอ AMD หรือ Intel บน Linux แล้วไม่ต้องการเซ็ตอัป ROCm หรือ OpenVINO คุณสามารถสลับไปใช้ **🖥️ CPU** ได้ทันที ซึ่งทำงานได้เสถียรและรวดเร็วแบบ Real-time (ความเร็ว ~1.5x ของเสียงสด) ใช้ RAM ต่ำมากเพียง ~140 MB – 250 MB โดยไม่ต้องลงไดรเวอร์หรือแพ็กเกจเสริมใดๆ ทั้งสิ้น
+
+---
+
+### 5.6 ผลการทดสอบเชิงประจักษ์และการวิเคราะห์ประสิทธิภาพ (Empirical Benchmark: Linux CUDA vs Windows DirectML vs CPU)
+
+จากการทดสอบเปรียบเทียบเชิงประจักษ์ด้วยการถอดเสียงแบบไฟล์ชุดเดียวกัน (Batch Processing) บนเครื่องที่ใช้การ์ดจอตัวเดียวกัน (**NVIDIA GeForce GTX 1050 2GB**):
+
+| สภาพแวดล้อม / Execution Provider | โหมดฮาร์ดแวร์ | เวลาที่ใช้แปลงไฟล์เดียวกัน | อัตราความเร็วสัมพัทธ์ | การตั้งค่า & ความยืดหยุ่น |
+| :--- | :---: | :---: | :---: | :--- |
+| 🐧 **Linux (Ubuntu) + CUDA** | `CUDAExecutionProvider` | ⚡ **17.6 วินาที** | **1.0x (เร็วที่สุด)** | ต้องมีไดรเวอร์ NVIDIA + สภาพแวดล้อม CUDA / cuDNN |
+| 🪟 **Windows 11 + DirectML** | `DmlExecutionProvider` | 🚀 **27.7 วินาที** | ~1.57x | **Zero-Config** (ไม่ต้องลง CUDA Toolkit, รองรับ GPU ทุกค่าย) |
+| 🖥️ **Linux / Windows (CPU)** | `CPUExecutionProvider` | 🕒 **เวลาเท่ากันทั้งสอง OS** | สม่ำเสมอ | ประหยัด RAM ต่ำมาก (< 250 MB), ไม่ต้องพึ่งพาการ์ดจอใดๆ |
+
+#### 🔬 การวิเคราะห์เชิงเทคนิค (Technical Deep Dive)
+
+1. **ทำไม Linux CUDA (17.6s) ถึงเร็วกว่า Windows DirectML (27.7s)?**
+   * **Direct Hardware Access vs Translation Layer:**
+     * **Linux CUDA:** สื่อสารตรงสู่ชิป GPU ผ่านไดรเวอร์เฉพาะทางระดับลึก (`libcudart`, `libcublas`, `cuDNN 9.10`) ซึ่งประมวลผลผ่าน Assembly Kernels สำหรับสถาปัตยกรรม Pascal (`sm_61`) โดยตรง
+     * **Windows DirectML:** ทำงานผ่านเลเยอร์ DirectX 12 (D3D12 / WDDM) ของ Microsoft เพื่อความเป็นมาตรฐานกลาง (Vendor-Agnostic) จึงส่งงานผ่าน HLSL Compute Shaders ซึ่งมี Translation Layer Overhead เพิ่มขึ้นเล็กน้อย
+   * **Kernel Dispatch Latency ใน RNN-T Loop:**
+     * โมเดล FastConformer RNN-T มีลูปการทำ Autoregressive Step-by-Step Decoding ซึ่งต้องส่งคำสั่ง Kernel ซ้ำๆ หลายพันครั้งตลอดไฟล์เสียง การส่งคำสั่งผ่าน DirectX 12 Command Queue บน Windows จะมี Dispatch Latency สะสมมากกว่า CUDA Streams บน Linux (~1.5 เท่า)
+
+2. **ทำไมโหมด CPU ถึงได้เวลาในการประมวลผลเท่ากันทั้งสอง OS?**
+   * ทั้ง Windows และ Linux รันผ่านเอนจิน **MLAS (Microsoft Linear Algebra Subprograms)** บนคำสั่งชุดเดียวกันของ CPU x86-64 คือ **AVX2 / FMA3**
+   * การประมวลผลบน CPU ไม่มีส่วนของ Graphics Driver หรือ Display Driver คั่นกลาง และทั้งสองระบบถูกกำหนดค่า Thread Pool เท่ากันเป๊ะ (`Intra-op = 2`, `Inter-op = 1`) ประสิทธิภาพที่ได้จึงใกล้เคียงกัน 1:1
+
+3. **แนวทางการเลือกใช้งาน (Deployment Recommendations):**
+   * **งานแปลงไฟล์ความเร็วสูงระดับ Production / Server:** แนะนำรันบน **Linux (CUDA)** เพื่อใช้ประโยชน์จากความเร็วสูงสุด
+   * **การใช้งานประจำวันบน Desktop / แจกจ่ายผู้ใช้ทั่วไป:** แนะนำ **Windows (DirectML)** เพราะเปิดใช้งานได้ทันทีแบบ Zero-Config ไม่ต้องติดตั้ง CUDA Toolkit หรือตั้งค่า Environment Path ให้ยุ่งยาก
 
 ---
 

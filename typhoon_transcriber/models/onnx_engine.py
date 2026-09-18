@@ -76,6 +76,7 @@ class TyphoonONNXEngine:
             if sys.platform.startswith("win"):
                 return [
                     "CUDAExecutionProvider",
+                    "DmlExecutionProvider",
                     "DirectMLExecutionProvider",
                     "CPUExecutionProvider",
                 ]
@@ -218,7 +219,7 @@ class TyphoonONNXEngine:
         provider = self.get_active_provider()
         if "CUDA" in provider:
             return "Running on CUDA"
-        elif "DirectML" in provider:
+        elif "DirectML" in provider or "Dml" in provider:
             return "Running on DirectML"
         elif "ROCm" in provider:
             return "Running on ROCm"

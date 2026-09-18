@@ -197,6 +197,8 @@ class PostProcessingDialog(QDialog):
         """Update QTextEdit styling with current font size and theme colors."""
         font = self.txt_prompt.font()
         font.setPointSize(self.prompt_font_size)
+        font.setStyleStrategy(QFont.PreferAntialias | QFont.PreferQuality)
+        font.setHintingPreference(QFont.PreferVerticalHinting)
         self.txt_prompt.setFont(font)
         self.txt_prompt.document().setDefaultFont(font)
 

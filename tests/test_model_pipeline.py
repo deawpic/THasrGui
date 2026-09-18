@@ -134,6 +134,7 @@ def test_provider_selection_cross_platform(monkeypatch):
     win_gpu_providers = TyphoonONNXEngine.get_providers_for_preference("GPU")
     assert win_gpu_providers == [
         "CUDAExecutionProvider",
+        "DmlExecutionProvider",
         "DirectMLExecutionProvider",
         "CPUExecutionProvider",
     ]
@@ -160,7 +161,7 @@ def test_onnx_engine_session_creation_fallback(monkeypatch, tmp_path):
         def __init__(self, path, sess_options=None, providers=None):
             calls.append(providers)
             # If GPU providers requested, simulate driver missing error
-            if providers and "DirectMLExecutionProvider" in providers or "CUDAExecutionProvider" in providers:
+            if providers and ("DmlExecutionProvider" in providers or "DirectMLExecutionProvider" in providers or "CUDAExecutionProvider" in providers):
                 raise RuntimeError("Failed to load GPU dynamic library (CUDA/DirectML driver missing)")
             self._providers = providers or ["CPUExecutionProvider"]
 
@@ -177,6 +178,7 @@ def test_onnx_engine_session_creation_fallback(monkeypatch, tmp_path):
         "onnxruntime.get_available_providers",
         lambda: [
             "CUDAExecutionProvider",
+            "DmlExecutionProvider",
             "DirectMLExecutionProvider",
             "ROCmExecutionProvider",
             "OpenVINOExecutionProvider",
@@ -207,7 +209,10 @@ def test_onnx_engine_provider_status_text():
         def get_providers(self):
             return self._providers
 
-    # DirectML
+    # DirectML (both DmlExecutionProvider and DirectMLExecutionProvider)
+    engine.session = FakeSession(["DmlExecutionProvider", "CPUExecutionProvider"])
+    assert engine.get_provider_status_text() == "Running on DirectML"
+
     engine.session = FakeSession(["DirectMLExecutionProvider", "CPUExecutionProvider"])
     assert engine.get_provider_status_text() == "Running on DirectML"
 

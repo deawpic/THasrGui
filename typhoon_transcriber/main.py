@@ -42,6 +42,10 @@ def main() -> int:
     app.setApplicationName(APP_NAME)
     app.setStyle("Fusion")
 
+    # Configure high-quality Thai typography, subpixel antialiasing & hinting
+    from typhoon_transcriber.ui.styles import configure_application_typography
+    configure_application_typography(app)
+
     # Locate or initialize ONNX Engine
     manager = ModelManager(cache_dir=DEFAULT_CACHE_DIR)
     model_path = manager.get_model_path()

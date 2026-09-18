@@ -556,9 +556,11 @@ class MainWindow(QMainWindow):
         """Apply font size to transcript text editor reliably across styles and documents."""
         font = self.transcript_edit.font()
         font.setPointSize(self.font_size)
+        font.setStyleStrategy(QFont.PreferAntialias | QFont.PreferQuality)
+        font.setHintingPreference(QFont.PreferVerticalHinting)
         self.transcript_edit.setFont(font)
         self.transcript_edit.document().setDefaultFont(font)
-        self.transcript_edit.setStyleSheet(f"font-size: {self.font_size}pt;")
+        self.transcript_edit.setStyleSheet(f"font-size: {self.font_size}pt; line-height: 1.6;")
         if hasattr(self, "lbl_font_size"):
             self.lbl_font_size.setText(f"{self.font_size} pt")
 
@@ -579,6 +581,8 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app:
             app.setStyleSheet(qss)
+            from typhoon_transcriber.ui.styles import configure_application_typography
+            configure_application_typography(app)
         if hasattr(self, "lbl_batch_overall"):
             self.lbl_batch_overall.setStyleSheet(
                 f"font-weight: bold; color: {'#89b4fa' if self.is_dark_theme else '#0071e3'};"

@@ -1,11 +1,52 @@
-"""
-Modern Dark & Light QSS stylesheets with Thai typography metric standards.
-Prevents clipping of upper/lower Thai vowels and tone marks.
-"""
+import sys
+from typing import Optional
+from PySide6.QtGui import QFont, QFontDatabase
+from PySide6.QtWidgets import QApplication
+
+
+def resolve_best_thai_font_family() -> str:
+    """
+    Dynamically discover the best available modern Thai font on the running system.
+    Prioritizes modern loopless/looped fonts with excellent Thai typography metrics.
+    """
+    candidates = [
+        "Noto Sans Thai",
+        "IBM Plex Sans Thai",
+        "Sarabun",
+        "Segoe UI Variable Text",
+        "Leelawadee UI",
+        "Segoe UI",
+        "Ubuntu",
+        "Cantarell",
+    ]
+    try:
+        available = set(QFontDatabase.families())
+        for c in candidates:
+            if c in available:
+                return c
+    except Exception:
+        pass
+    return "Leelawadee UI" if sys.platform.startswith("win") else "Noto Sans Thai"
+
+
+def configure_application_typography(app: Optional[QApplication] = None, point_size: int = 10) -> QFont:
+    """
+    Configure high-quality typography and anti-aliasing across the entire Qt application.
+    Enables subpixel anti-aliasing and vertical hinting to ensure Thai vowels and tone marks
+    are rendered crisply without clipping or jagged edges on Windows and Linux.
+    """
+    best_family = resolve_best_thai_font_family()
+    font = QFont(best_family, point_size)
+    font.setStyleStrategy(QFont.PreferAntialias | QFont.PreferQuality)
+    font.setHintingPreference(QFont.PreferVerticalHinting)
+    if app:
+        app.setFont(font)
+    return font
+
 
 # Thai Font Family Stack
 THAI_FONT_FAMILY = (
-    "'Sarabun', 'Noto Sans Thai', 'Leelawadee UI', 'Segoe UI', 'Ubuntu', 'Cantarell', sans-serif"
+    "'Noto Sans Thai', 'IBM Plex Sans Thai', 'Sarabun', 'Segoe UI Variable Text', 'Leelawadee UI', 'Segoe UI', 'Ubuntu', 'Cantarell', sans-serif"
 )
 
 DARK_THEME_QSS = f"""
@@ -108,7 +149,7 @@ QTextEdit {{
     border: 1px solid #313244;
     border-radius: 8px;
     padding: 12px;
-    line-height: 1.5;
+    line-height: 1.6;
     selection-background-color: #585b70;
 }}
 
@@ -294,7 +335,7 @@ QTextEdit {{
     border: 1px solid #d2d2d7;
     border-radius: 8px;
     padding: 12px;
-    line-height: 1.5;
+    line-height: 1.6;
     selection-background-color: #b3d7ff;
 }}
 
