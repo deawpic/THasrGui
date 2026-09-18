@@ -78,24 +78,34 @@ jobs:
           Write-Host "Packaging standalone onedir application with Nuitka in $appDir..."
           uv run --directory $appDir nuitka `
             --standalone `
-            --enable-plugin=pyside6 `
+            --enable-plugins=pyside6 `
             --windows-console-mode=disable `
             --output-dir=dist `
             --output-folder-name=TyphoonTranscriber `
             --output-filename=TyphoonTranscriber.exe `
             --follow-import-to=typhoon_transcriber `
-            --include-package-data=sounddevice `
-            --include-package-data=soundfile `
+            --include-package-data=_sounddevice_data `
+            --include-package-data=_soundfile_data `
             --include-package-data=sentencepiece `
             --include-package-data=onnxruntime `
             --nofollow-import-to=torch,torchaudio,nemo,tkinter,matplotlib,scipy,IPython,jupyter,notebook `
             typhoon_transcriber/main.py
+
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "CRITICAL: Nuitka compilation failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+          }
 
       - name: Prepare Release Package & ZIP Bundle
         shell: pwsh
         run: |
           $appDir = "${{ steps.app_info.outputs.app_dir }}"
           $distBaseDir = Join-Path $appDir "dist"
+
+          if (-not (Test-Path $distBaseDir)) {
+              Write-Error "CRITICAL: Build directory '$distBaseDir' does not exist. Nuitka compilation may have failed."
+              exit 1
+          }
 
           # Locate Nuitka standalone output directory (e.g. dist/TyphoonTranscriber.dist or dist/TyphoonTranscriber)
           $nuitkaDir = Get-ChildItem -Path $distBaseDir -Directory | Where-Object { $_.Name -like "*TyphoonTranscriber*" } | Select-Object -First 1
