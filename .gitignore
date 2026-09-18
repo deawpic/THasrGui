@@ -108,3 +108,7 @@ export/
 *.log
 *.bak
 *.desktop
+
+# agents files
+AGENTS.md
+.agents/
